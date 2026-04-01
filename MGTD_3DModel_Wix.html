@@ -1,0 +1,1499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MGTD-X1 · 2036 Model</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #060e1c;
+  font-family: 'Rajdhani', sans-serif;
+  color: #e0e8f0;
+  overflow: hidden;
+  width: 100vw; height: 100vh;
+  user-select: none;
+}
+
+/* Canvas fills background */
+#c {
+  position: fixed; inset: 0; z-index: 0;
+}
+
+/* UI overlay */
+#ui {
+  position: fixed; inset: 0; z-index: 10;
+  pointer-events: none;
+  display: flex; flex-direction: column;
+  justify-content: space-between;
+  padding: 16px;
+}
+
+/* Header */
+.hdr {
+  display: flex; justify-content: space-between; align-items: flex-start;
+}
+.hdr-left { max-width: 55%; }
+.model-id {
+  font-size: clamp(11px,1.8vw,14px);
+  font-family: 'Share Tech Mono', monospace;
+  color: #c9a84c; letter-spacing: 3px;
+  margin-bottom: 2px;
+}
+.model-name {
+  font-size: clamp(22px,4vw,38px);
+  font-weight: 700; letter-spacing: 2px;
+  line-height: 1.05;
+  background: linear-gradient(135deg, #ffffff 0%, #c9a84c 60%, #e8c96a 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.model-sub {
+  font-size: clamp(10px,1.5vw,12px);
+  font-family: 'Share Tech Mono', monospace;
+  color: #546e7a; letter-spacing: 2px; margin-top: 4px;
+}
+.hdr-right {
+  text-align: right;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: clamp(9px,1.2vw,11px); color: #37474f;
+  line-height: 2;
+}
+.hdr-right .live { color: #00e5c8; }
+
+/* View selector */
+#views {
+  display: flex; gap: 6px; pointer-events: all;
+  flex-wrap: wrap;
+}
+.vbtn {
+  padding: 5px 14px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: clamp(10px,1.4vw,12px); font-weight: 600;
+  letter-spacing: 1.5px; text-transform: uppercase;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: #607d8b; border-radius: 2px;
+  cursor: pointer; transition: all .2s;
+}
+.vbtn:hover { border-color: rgba(201,168,76,0.4); color: #c9a84c; }
+.vbtn.active {
+  background: rgba(201,168,76,0.12);
+  border-color: rgba(201,168,76,0.6);
+  color: #e8c96a;
+}
+
+/* Info panel */
+#info {
+  background: rgba(6,14,28,0.82);
+  border: 1px solid rgba(201,168,76,0.2);
+  border-radius: 4px; padding: 14px 16px;
+  max-width: 300px; min-height: 80px;
+  backdrop-filter: blur(8px);
+  transition: all .35s ease;
+  pointer-events: none;
+}
+.info-tag {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px; color: #c9a84c; letter-spacing: 2px;
+  text-transform: uppercase; margin-bottom: 6px;
+}
+.info-title {
+  font-size: clamp(14px,2vw,18px); font-weight: 700;
+  letter-spacing: 1px; margin-bottom: 6px; line-height: 1.2;
+}
+.info-body {
+  font-size: clamp(10px,1.4vw,12px); color: #90a4ae;
+  line-height: 1.65; font-family: 'Share Tech Mono', monospace;
+}
+.info-val {
+  color: #00e5c8; font-weight: 600;
+}
+
+/* Bottom bar */
+.bot {
+  display: flex; justify-content: space-between;
+  align-items: flex-end;
+}
+/* Layer legend */
+#legend {
+  display: flex; flex-direction: column; gap: 5px;
+}
+.leg-row {
+  display: flex; align-items: center; gap: 8px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: clamp(8px,1.2vw,10px); color: #546e7a;
+  cursor: pointer; pointer-events: all;
+  transition: color .2s;
+}
+.leg-row:hover { color: #90a4ae; }
+.leg-row.active-leg { color: #e0e8f0; }
+.leg-dot {
+  width: 8px; height: 8px; border-radius: 1px; flex-shrink: 0;
+}
+
+/* Drag hint */
+.drag-hint {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: clamp(8px,1.1vw,10px); color: #263238;
+  letter-spacing: 1px; text-align: right;
+}
+
+/* Heat flow arrow overlay */
+#heatflow {
+  position: fixed; bottom: 50%; left: 50%;
+  transform: translate(-50%, 50%);
+  pointer-events: none; z-index: 5;
+  opacity: 0; transition: opacity .4s;
+}
+.hf-arrow {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 3px;
+}
+/* Arrow tip at TOP pointing upward */
+.hf-tip {
+  width: 0; height: 0;
+  border-left: 10px solid transparent;
+  border-right: 10px solid transparent;
+  border-bottom: 16px solid #ffffff;
+  animation: hf-pulse 1.2s ease-in-out infinite;
+  order: -1;
+  filter: drop-shadow(0 0 6px #00e5c8);
+}
+/* Line below tip */
+.hf-line {
+  width: 3px; height: 60px;
+  background: linear-gradient(180deg, #ffffff, #00e5c8, transparent);
+  animation: hf-pulse 1.2s ease-in-out infinite;
+  box-shadow: 0 0 8px #00e5c8;
+}
+.hf-label {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px; color: #ffffff;
+  letter-spacing: 3px;
+  margin-top: 6px; white-space: nowrap;
+  text-shadow: 0 0 10px #00e5c8;
+}
+@keyframes hf-pulse {
+  0%,100% { opacity: 0.75; }
+  50% { opacity: 1; }
+}
+
+/* Scan line effect */
+#scanline {
+  position: fixed; inset: 0; z-index: 1; pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg, transparent, transparent 3px,
+    rgba(0,229,200,0.012) 3px, rgba(0,229,200,0.012) 4px
+  );
+}
+
+/* Corner marks */
+.corner {
+  position: fixed; width: 20px; height: 20px;
+  z-index: 20; pointer-events: none;
+  border-color: rgba(201,168,76,0.25); border-style: solid;
+  border-width: 0;
+}
+.corner.tl { top:8px; left:8px; border-top-width:1.5px; border-left-width:1.5px; }
+.corner.tr { top:8px; right:8px; border-top-width:1.5px; border-right-width:1.5px; }
+.corner.bl { bottom:8px; left:8px; border-bottom-width:1.5px; border-left-width:1.5px; }
+.corner.br { bottom:8px; right:8px; border-bottom-width:1.5px; border-right-width:1.5px; }
+
+/* Explode button */
+#explodeBtn {
+  pointer-events: all;
+  padding: 7px 18px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: clamp(10px,1.4vw,12px); font-weight: 700;
+  letter-spacing: 2px; text-transform: uppercase;
+  background: rgba(0,229,200,0.08);
+  border: 1px solid rgba(0,229,200,0.3);
+  color: #00e5c8; border-radius: 2px;
+  cursor: pointer; transition: all .2s;
+}
+#explodeBtn:hover {
+  background: rgba(0,229,200,0.15);
+  border-color: rgba(0,229,200,0.6);
+  box-shadow: 0 0 20px rgba(0,229,200,0.15);
+}
+
+/* Loading screen */
+#loader {
+  position: fixed; inset: 0; z-index: 100;
+  background: #060e1c;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 16px;
+  transition: opacity .5s;
+}
+.loader-title {
+  font-size: 32px; font-weight: 700; letter-spacing: 4px;
+  color: #c9a84c;
+}
+.loader-bar {
+  width: 200px; height: 2px;
+  background: rgba(201,168,76,0.15); border-radius: 2px; overflow: hidden;
+}
+.loader-fill {
+  height: 100%; background: #c9a84c; border-radius: 2px;
+  animation: load-fill .8s ease-out forwards;
+}
+@keyframes load-fill { from { width: 0; } to { width: 100%; } }
+.loader-sub {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px; color: #37474f; letter-spacing: 2px;
+}
+</style>
+</head>
+<body>
+
+<!-- Loader -->
+<div id="loader">
+  <div class="loader-title">MGTD-X1</div>
+  <div class="loader-bar"><div class="loader-fill"></div></div>
+  <div class="loader-sub">LOADING 3D MODEL · 2036 VISION</div>
+</div>
+
+<!-- Corner marks -->
+<div class="corner tl"></div>
+<div class="corner tr"></div>
+<div class="corner bl"></div>
+<div class="corner br"></div>
+
+<!-- Scanline overlay -->
+<div id="scanline"></div>
+
+<!-- Three.js canvas -->
+<canvas id="c"></canvas>
+
+<!-- Heat flow indicator -->
+<div id="heatflow">
+  <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:#ffffff;letter-spacing:3px;text-align:center;margin-bottom:6px;text-shadow:0 0 8px #00e5c8;">HEATSINK</div>
+  <div class="hf-arrow">
+    <div class="hf-tip"></div>
+    <div class="hf-line"></div>
+    <div class="hf-label">↑ HEAT FLOW ↑</div>
+  </div>
+  <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:#ffffff;letter-spacing:3px;text-align:center;margin-top:6px;text-shadow:0 0 8px #00e5c8;">CHIP</div>
+</div>
+
+<!-- Main UI -->
+<div id="ui">
+  <!-- Header -->
+  <div class="hdr">
+    <div class="hdr-left">
+      <div class="model-id">MGTD-X1 · THERMAL INTERFACE MODULE</div>
+      <div class="model-name">Micro-Gap<br>Thermal Diode</div>
+      <div class="model-sub">2036 MODEL · PASSIVE · 0W · SOLID-STATE</div>
+    </div>
+    <div class="hdr-right">
+      <div><span class="live">●</span> RECTIFICATION: −6.7% (p&lt;0.001)</div>
+      <div>VACUUM: ~38 TORR PROVEN</div>
+      <div>DATA POINTS: 30,000</div>
+      <div>η = 0.9325 ± 0.0016</div>
+    </div>
+  </div>
+
+  <!-- View buttons + explode -->
+  <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+    <div id="views">
+      <div class="vbtn active" data-view="0">Overview</div>
+      <div class="vbtn" data-view="1">GPU Module</div>
+      <div class="vbtn" data-view="3">Spacecraft</div>
+    </div>
+    <button id="explodeBtn">⊕ EXPLODE VIEW</button>
+  </div>
+
+  <!-- Bottom -->
+  <div class="bot">
+    <!-- Info panel -->
+    <div id="info">
+      <div class="info-tag">2036 MODEL · ENGINEERING VISION</div>
+      <div class="info-title">This is our model of the future device</div>
+      <div class="info-body">
+        Not built or tested — this is our vision<br>
+        of what the MGTD becomes in 10–20 years.<br>
+        <span class="info-val">EXPLODE VIEW</span> separates the layers.<br>
+        GPU · Cross-Section · Spacecraft contexts.
+      </div>
+    </div>
+
+    <!-- Right side: layer diagram + drag hint -->
+    <div style="display:flex; flex-direction:column; align-items:flex-end; gap:10px;">
+
+    <!-- Layer diagram — rebuilt dynamically when view changes -->
+    <div id="legend" style="background:rgba(6,14,28,0.82);border:1px solid rgba(201,168,76,0.2);border-radius:4px;padding:12px 14px;backdrop-filter:blur(8px);min-width:260px;">
+      <div style="font-family:'Share Tech Mono',monospace;font-size:9px;color:#c9a84c;letter-spacing:2px;margin-bottom:10px;text-transform:uppercase;">Layer Structure</div>
+      <div id="legend-rows"></div>
+      <div style="border-top:1px solid rgba(255,255,255,0.05);margin-top:8px;padding-top:6px;font-family:'Share Tech Mono',monospace;font-size:7.5px;color:#37474f;text-align:right;letter-spacing:0.5px;">Click any layer for details</div>
+    </div>
+
+      <div class="drag-hint">DRAG TO ROTATE · SCROLL TO ZOOM</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// SCENE SETUP
+// ═══════════════════════════════════════════════════════════
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x060e1c);
+scene.fog = new THREE.Fog(0x060e1c, 15, 35);
+
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+camera.position.set(4, 3, 5);
+camera.lookAt(0, 0, 0);
+
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ═══════════════════════════════════════════════════════════
+// LIGHTING
+// ═══════════════════════════════════════════════════════════
+const amb = new THREE.AmbientLight(0xffe8cc, 1.4);
+scene.add(amb);
+
+const key = new THREE.DirectionalLight(0xffeedd, 1.8);
+key.position.set(5, 8, 5);
+key.castShadow = true;
+key.shadow.mapSize.set(1024,1024);
+scene.add(key);
+
+const fill = new THREE.DirectionalLight(0x00e5c8, 0.4);
+fill.position.set(-5, -2, 3);
+scene.add(fill);
+
+const rim = new THREE.DirectionalLight(0xc9a84c, 0.6);
+rim.position.set(0, -5, -5);
+scene.add(rim);
+
+// Dedicated bottom-up light to illuminate the gold LOW-ε plate
+const bottomLight = new THREE.DirectionalLight(0xffd060, 1.4);
+bottomLight.position.set(2, -6, 4);
+scene.add(bottomLight);
+
+// Side light to catch gold plate edge on rotation
+const sideLight = new THREE.DirectionalLight(0xffaa00, 0.8);
+sideLight.position.set(-4, -2, -3);
+scene.add(sideLight);
+
+// ═══════════════════════════════════════════════════════════
+// MATERIALS
+// ═══════════════════════════════════════════════════════════
+const matBlackAl = new THREE.MeshStandardMaterial({
+  color: 0x1a1a2e,
+  roughness: 0.4,
+  metalness: 0.8,
+  envMapIntensity: 1.2,
+});
+
+const matGold = new THREE.MeshStandardMaterial({
+  color: 0xd4a017,
+  roughness: 0.28,
+  metalness: 0.55,
+  emissive: 0x8a5c00,
+  emissiveIntensity: 0.55,
+  envMapIntensity: 1.0,
+});
+
+const matGap = new THREE.MeshStandardMaterial({
+  color: 0x003844,
+  roughness: 0.1,
+  metalness: 0.0,
+  transparent: true,
+  opacity: 0.55,
+  side: THREE.DoubleSide,
+});
+
+const matGapEdge = new THREE.MeshStandardMaterial({
+  color: 0x00e5c8,
+  roughness: 0.3,
+  metalness: 0.5,
+  transparent: true,
+  opacity: 0.7,
+  emissive: 0x004433,
+  emissiveIntensity: 0.8,
+});
+
+const matPCB = new THREE.MeshStandardMaterial({
+  color: 0x0a2a14,
+  roughness: 0.8,
+  metalness: 0.1,
+});
+
+const matStandoff = new THREE.MeshStandardMaterial({
+  color: 0x2a2a3a,
+  roughness: 0.5,
+  metalness: 0.6,
+});
+
+const matGlow = new THREE.MeshStandardMaterial({
+  color: 0x00e5c8,
+  emissive: 0x00e5c8,
+  emissiveIntensity: 1.5,
+  transparent: true,
+  opacity: 0.9,
+});
+
+// ═══════════════════════════════════════════════════════════
+// GEOMETRY — LAYER STACK
+// ═══════════════════════════════════════════════════════════
+const W = 3.0, D = 1.8; // plate dimensions
+
+// Group to hold everything
+const stack = new THREE.Group();
+scene.add(stack);
+
+// --- PCB GROUP — all PCB elements grouped so they move together in explode ---
+const pcbGroup = new THREE.Group();
+pcbGroup.position.y = -1.15;
+stack.add(pcbGroup);
+
+const pcbGeo = new THREE.BoxGeometry(W+0.4, 0.06, D+0.4);
+const pcb = new THREE.Mesh(pcbGeo, matPCB);
+pcb.position.y = 0;  // relative to pcbGroup
+pcb.receiveShadow = true;
+pcb.userData = {
+  tag: 'PCB MOUNT BASE',
+  title: 'Circuit Board Thermal Interface',
+  body: 'Material: FR4 PCB substrate\nFunction: Mechanical mount + heat routing\nConnects MGTD to the system board\n\nIn the 2036 device, this becomes a\nwafer-level hermetic package —\nMEMS-fabricated, vacuum-sealed,\nembedded directly in the chip stack.'
+};
+pcbGroup.add(pcb);
+
+// PCB traces (relative to pcbGroup — y=0.03 sits on top of board)
+for(let i=0; i<4; i++) {
+  const tg = new THREE.BoxGeometry(W*0.6+Math.random()*0.4, 0.005, 0.015);
+  const tm = new THREE.MeshStandardMaterial({
+    color: 0x00ff64, emissive: 0x00ff64,
+    emissiveIntensity: 0.3, transparent: true, opacity: 0.6
+  });
+  const tr = new THREE.Mesh(tg, tm);
+  tr.position.set((Math.random()-0.5)*0.5, 0.03, (Math.random()-0.5)*0.8);
+  pcbGroup.add(tr);
+}
+// PCB vias (relative to pcbGroup)
+for(let i=0; i<6; i++) {
+  const vg = new THREE.CylinderGeometry(0.04,0.04,0.07,8);
+  const vm = new THREE.MeshStandardMaterial({ color: 0xc9a84c, metalness: 0.9, roughness: 0.2 });
+  const v = new THREE.Mesh(vg, vm);
+  v.position.set((Math.random()-0.5)*2.5, 0.03, (Math.random()-0.5)*1.4);
+  pcbGroup.add(v);
+}
+
+// --- BOTTOM PLATE (GOLD / LOW-ε) ---
+const plateBotGeo = new THREE.BoxGeometry(W, 0.08, D);
+const plateBot = new THREE.Mesh(plateBotGeo, matGold);
+plateBot.position.y = -0.84;
+plateBot.castShadow = true;
+plateBot.receiveShadow = true;
+plateBot.userData = {
+  layerIndex: 2,
+  tag: 'LOW-ε SURFACE · CHIP SIDE',
+  title: 'Gold-Coated Surface',
+  body: 'Emissivity: ε ≈ 0.02 (2036 target)\nMaterial: Au-coated glass\nPosition: Faces the chip (heat source)\nRole: Absorbs heat from chip below\n\nLow emissivity = resists re-emission\nback toward chip. Heat is forced\nthrough gap upward to heatsink.'
+};
+stack.add(plateBot);
+
+// --- NYLON STANDOFFS (4 corners) ---
+const stdPos = [
+  [-W/2+0.22, D/2-0.2],
+  [W/2-0.22,  D/2-0.2],
+  [-W/2+0.22, -D/2+0.2],
+  [W/2-0.22,  -D/2+0.2],
+];
+const standoffs = [];
+stdPos.forEach(([x,z]) => {
+  const sg = new THREE.CylinderGeometry(0.06, 0.06, 0.55, 12);
+  const s = new THREE.Mesh(sg, matStandoff);
+  s.position.set(x, -0.525, z);
+  s.castShadow = true;
+  stack.add(s);
+  standoffs.push(s);
+});
+
+// --- GAP LAYER (translucent teal) ---
+const gapGeo = new THREE.BoxGeometry(W-0.1, 0.55, D-0.1);
+const gap = new THREE.Mesh(gapGeo, matGap);
+gap.position.y = -0.525;
+gap.userData = {
+  layerIndex: 1,
+  tag: 'VACUUM MICRO-GAP',
+  title: 'Hermetically Sealed Gap',
+  body: 'Target gap: < 10 µm\nVacuum: < 1 Torr (hermetic seal)\nPhysics: Evanescent EM waves tunnel\nacross gap — heat scales as 1/d²\n\nAt 38 Torr (proven): radiation\ndominates over air conduction.\nThis gap IS the device.'
+};
+stack.add(gap);
+
+// Gap edge glow strips
+[[-W/2+0.02,0],[W/2-0.02,0],[0,-D/2+0.02],[0,D/2-0.02]].forEach(([ex,ez],i) => {
+  const isX = i < 2;
+  const eg = new THREE.BoxGeometry(
+    isX ? 0.025 : W, 0.56, isX ? D : 0.025
+  );
+  const e = new THREE.Mesh(eg, matGapEdge);
+  e.position.set(ex, -0.525, ez);
+  stack.add(e);
+});
+
+// Scanning light particle inside gap
+const scanParticles = [];
+for(let i=0; i<12; i++) {
+  const pg = new THREE.SphereGeometry(0.018, 6, 6);
+  const pm = new THREE.MeshStandardMaterial({
+    color: 0x00e5c8, emissive: 0x00e5c8,
+    emissiveIntensity: 2, transparent: true, opacity: 0.6
+  });
+  const p = new THREE.Mesh(pg, pm);
+  p.position.set(
+    (Math.random()-0.5)*2.4,
+    -0.525 + (Math.random()-0.5)*0.4,
+    (Math.random()-0.5)*1.4
+  );
+  p.userData.speed = 0.3 + Math.random()*0.5;
+  p.userData.phase = Math.random()*Math.PI*2;
+  p.userData.axis = Math.random() > 0.5 ? 'x' : 'z';
+  scanParticles.push(p);
+  stack.add(p);
+}
+
+// --- TOP PLATE (BLACK ANODIZED / HIGH-ε) ---
+const plateTopGeo = new THREE.BoxGeometry(W, 0.08, D);
+const plateTop = new THREE.Mesh(plateTopGeo, matBlackAl);
+plateTop.position.y = -0.21;
+plateTop.castShadow = true;
+plateTop.receiveShadow = true;
+plateTop.userData = {
+  layerIndex: 0,
+  tag: 'HIGH-ε SURFACE · HEATSINK SIDE',
+  title: 'Black Anodized Aluminum',
+  body: 'Emissivity: ε ≈ 0.85 (proof-of-concept)\n2036 model target: ε ≈ 0.95 (ceramic)\nPosition: Faces the heatsink (above)\nRole: Radiates heat strongly upward\n\nHigh emissivity = efficient emitter.\nHeat exits here into heatsink.\nContrast with gold below: 47× in 2036.'
+};
+stack.add(plateTop);
+
+// ═══════════════════════════════════════════════════════════
+// 3D TEXT LABELS — canvas textures as sprites
+// Always face the camera as model rotates
+// Show layer name, material, and spec directly on the model
+// ═══════════════════════════════════════════════════════════
+
+function makeLabel(line1, line2, line3, accentColor, bgAlpha) {
+  const CW = 380, CH = 96;
+  const cv = document.createElement('canvas');
+  cv.width = CW; cv.height = CH;
+  const ctx = cv.getContext('2d');
+
+  // Background — rounded rect
+  const hex = accentColor;
+  const r = parseInt(hex.slice(1,3),16);
+  const g = parseInt(hex.slice(3,5),16);
+  const b = parseInt(hex.slice(5,7),16);
+  ctx.clearRect(0,0,CW,CH);
+  ctx.beginPath();
+  ctx.roundRect(3,3,CW-6,CH-6,8);
+  ctx.fillStyle = `rgba(${r*0.08},${g*0.08},${b*0.08},${bgAlpha})`;
+  ctx.fill();
+  // Border
+  ctx.beginPath();
+  ctx.roundRect(3,3,CW-6,CH-6,8);
+  ctx.strokeStyle = `rgba(${r},${g},${b},0.75)`;
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+  // Left accent bar
+  ctx.fillStyle = `rgba(${r},${g},${b},0.9)`;
+  ctx.beginPath();
+  ctx.roundRect(3,3,5,CH-6,4);
+  ctx.fill();
+
+  // Line 1 — main name (bold, bright)
+  ctx.fillStyle = `rgb(${Math.min(255,r+180)},${Math.min(255,g+180)},${Math.min(255,b+180)})`;
+  ctx.font = 'bold 22px "Share Tech Mono", monospace';
+  ctx.fillText(line1, 18, 32);
+
+  // Line 2 — material / detail (muted)
+  ctx.fillStyle = '#78909c';
+  ctx.font = '15px "Share Tech Mono", monospace';
+  ctx.fillText(line2, 18, 56);
+
+  // Line 3 — spec (accent color)
+  ctx.fillStyle = `rgba(${r},${g},${b},1.0)`;
+  ctx.font = 'bold 15px "Share Tech Mono", monospace';
+  ctx.fillText(line3, 18, 78);
+
+  const tex = new THREE.CanvasTexture(cv);
+  const mat = new THREE.SpriteMaterial({
+    map: tex, transparent: true, depthTest: false
+  });
+  const sprite = new THREE.Sprite(mat);
+  // Scale to world units: 380/96 ≈ 3.96 ratio
+  sprite.scale.set(2.2, 0.56, 1);
+  return sprite;
+}
+
+// ═══════════════════════════════════════════════════════════
+// LABEL POSITIONING — Two-column stagger (engineering callout style)
+//
+//  NEAR column (x = W/2+1.65):  TOP plate  (y=-0.21)  &  BOT plate (y=-0.84)
+//  FAR  column (x = W/2+3.3):   GAP        (y=-0.525) &  PCB base  (y=-1.15)
+//
+//  Each column has ~0.63 spacing → easily fits 0.56-tall labels with no overlap
+// ═══════════════════════════════════════════════════════════
+
+// Connector: short stub from plate edge → label.
+// nearConn: length 0.9, center W/2+0.5
+// farConn:  length 2.2, center W/2+1.6 (reaches the far column)
+function addConnector(yPos, color, far=false) {
+  const r = parseInt(color.slice(1,3),16);
+  const g = parseInt(color.slice(3,5),16);
+  const b = parseInt(color.slice(5,7),16);
+  const len = far ? 2.2 : 0.9;
+  const cx  = far ? W/2 + 1.6 : W/2 + 0.5;
+  const geo = new THREE.BoxGeometry(len, 0.014, 0.014);
+  const mat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(r/255,g/255,b/255),
+    emissive: new THREE.Color(r/255,g/255,b/255),
+    emissiveIntensity: 0.5, transparent: true, opacity: 0.6
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(cx, yPos, 0);
+  stack.add(mesh);
+  return mesh;
+}
+
+// ── [0] TOP PLATE — NEAR column (y = -0.21)
+const lblTop = makeLabel(
+  'HIGH-ε SURFACE',
+  'Black Anodized Al (2036: Ceramic)',
+  'ε ≈ 0.95  ·  Radiates heat upward →',
+  '#4d90fe', 0.85
+);
+lblTop.position.set(W/2 + 1.65, -0.21, 0);
+stack.add(lblTop);
+const connTop = addConnector(-0.21, '#4d90fe', false);
+
+// ── [1] VACUUM GAP — FAR column (y = -0.525)
+const lblGap = makeLabel(
+  'VACUUM MICRO-GAP',
+  'Hermetically sealed  ·  < 1 Torr',
+  '< 10 µm target  ·  Evanescent waves',
+  '#00e5c8', 0.85
+);
+lblGap.position.set(W/2 + 3.3, -0.525, 0);
+stack.add(lblGap);
+const connGap = addConnector(-0.525, '#00e5c8', true);
+
+// ── [2] BOTTOM PLATE — NEAR column (y = -0.84)
+const lblBot = makeLabel(
+  'LOW-ε SURFACE',
+  'Gold Coating (2036: Au on glass)',
+  'ε ≈ 0.02  ·  Faces chip  ·  Low emitter',
+  '#c9a84c', 0.85
+);
+lblBot.position.set(W/2 + 1.65, -0.84, 0);
+stack.add(lblBot);
+const connBot = addConnector(-0.84, '#c9a84c', false);
+
+// ── [3] PCB BASE — FAR column (y = -1.15)
+const lblPCB = makeLabel(
+  'PCB MOUNT BASE',
+  'Circuit board thermal interface',
+  'Routes heat  ·  Mechanical support',
+  '#4caf50', 0.85
+);
+lblPCB.position.set(W/2 + 3.3, -1.15, 0);
+stack.add(lblPCB);
+const connPCB = addConnector(-1.15, '#4caf50', true);
+
+// Store labels AND connectors for explode animation
+const layerLabels    = [lblTop,   lblGap,    lblBot,  lblPCB];
+const layerConns     = [connTop,  connGap,   connBot, connPCB];
+const labelNormalY   = [-0.21,   -0.525,    -0.84,   -1.15];
+const labelExplodedY = [ 0.8,    -0.525,    -1.8,    -2.6];
+
+// Engraving/texture detail on top plate
+for(let i=0; i<3; i++) {
+  const eg = new THREE.BoxGeometry(W*0.7, 0.005, 0.025);
+  const em = new THREE.MeshStandardMaterial({
+    color: 0x2a2a3e, roughness: 0.9, metalness: 0.1
+  });
+  const e = new THREE.Mesh(eg, em);
+  e.position.set(0, -0.17, -D/2+0.3+i*0.2);
+  stack.add(e);
+}
+
+// Label text (simulated as thin geometry)
+const labelGeo = new THREE.BoxGeometry(1.4, 0.005, 0.2);
+const labelMat = new THREE.MeshStandardMaterial({
+  color: 0xc9a84c, emissive: 0xc9a030, emissiveIntensity: 0.3,
+  roughness: 0.8, metalness: 0.0
+});
+const label = new THREE.Mesh(labelGeo, labelMat);
+label.position.set(0, -0.165, 0);
+stack.add(label);
+
+// Glowing dot indicators on top plate
+[[-W/2+0.2, -D/2+0.2],[W/2-0.2,-D/2+0.2],[-W/2+0.2,D/2-0.2],[W/2-0.2,D/2-0.2]].forEach(([x,z]) => {
+  const dg = new THREE.CylinderGeometry(0.04,0.04,0.02,12);
+  const dm = new THREE.MeshStandardMaterial({
+    color: 0x00e5c8, emissive: 0x00e5c8, emissiveIntensity: 1.2,
+    transparent: true, opacity: 0.8
+  });
+  const d = new THREE.Mesh(dg, dm);
+  d.position.set(x, -0.16, z);
+  stack.add(d);
+});
+
+// clickable array defined below after all context meshes are created
+
+// ═══════════════════════════════════════════════════════════
+// CONTEXT OBJECTS (GPU and Spacecraft views)
+// Each context has subgroups so explode view separates all layers
+// ═══════════════════════════════════════════════════════════
+const cpuContext = new THREE.Group();
+const spacecraftContext = new THREE.Group();
+scene.add(cpuContext); scene.add(spacecraftContext);
+cpuContext.visible = false; spacecraftContext.visible = false;
+
+// ── CPU: two subgroups — chip below MGTD, heatsink above MGTD
+const cpuBelowGroup = new THREE.Group(); // chip + die → move DOWN in explode
+const cpuAboveGroup = new THREE.Group(); // heatsink + fins → move UP in explode
+cpuContext.add(cpuBelowGroup);
+cpuContext.add(cpuAboveGroup);
+
+// GPU chip package (in cpuBelowGroup — moves down)
+const chipGeo = new THREE.BoxGeometry(3.4, 0.15, 3.4);
+const chipMat = new THREE.MeshStandardMaterial({ color: 0x1a1a2a, roughness: 0.6, metalness: 0.4 });
+const chip = new THREE.Mesh(chipGeo, chipMat);
+chip.position.y = -1.3;
+chip.userData = {
+  tag: 'GPU PACKAGE',
+  title: 'AI Accelerator Chip Package',
+  body: 'Model: NVIDIA H100 class (2036 target)\nTDP: ~700W per chip\nSubstrate: organic laminate\nIHS: Integrated Heat Spreader\n\nHeat flows: GPU die → IHS → MGTD\nMGTD routes it upward to heatsink.\nBlocks reverse flow back to die.'
+};
+cpuBelowGroup.add(chip);
+
+// GPU die on top of chip (in cpuBelowGroup)
+const dieGeo = new THREE.BoxGeometry(1.8, 0.06, 1.8);
+const dieMat = new THREE.MeshStandardMaterial({ color: 0x2a2a3a, roughness: 0.3, metalness: 0.7 });
+const die = new THREE.Mesh(dieGeo, dieMat);
+die.position.y = -1.22;
+die.userData = {
+  tag: 'GPU DIE',
+  title: 'AI Processor Silicon Die',
+  body: 'Contains: CUDA cores + Tensor cores\nMemory: HBM3 stacked on substrate\nProcess node: 3–4nm (2036 target)\n\nPrimary heat source — 700W from\na die roughly 800mm².\nHeat density: ~0.9 W/mm²\nMGTD sits directly above this layer.'
+};
+cpuBelowGroup.add(die);
+
+// GPU heat glow accent (in cpuBelowGroup)
+const cpuLabelMat = new THREE.MeshStandardMaterial({
+  color: 0xc9a84c, emissive: 0xc9a030, emissiveIntensity: 0.5, roughness: 0.8
+});
+const cpuHot = new THREE.Mesh(new THREE.BoxGeometry(0.8,0.01,0.15), cpuLabelMat);
+cpuHot.position.set(0, -1.19, 0);
+cpuBelowGroup.add(cpuHot);
+
+// Heatsink fins (in cpuAboveGroup — moves up) — store refs for clickable
+const hsFins = [];
+for(let i=0; i<7; i++) {
+  const fg = new THREE.BoxGeometry(3.0, 0.6, 0.06);
+  const fm = new THREE.MeshStandardMaterial({ color: 0xb0bec5, roughness: 0.3, metalness: 0.9 });
+  const f = new THREE.Mesh(fg, fm);
+  f.position.set(0, 0.5, -0.9+i*0.3);
+  f.userData = {
+    tag: 'HEATSINK FINS',
+    title: 'Aluminum Cooling Fins',
+    body: 'Material: Al 6061 extrusion\n7 fins · Forced or natural convection\nSurface area: maximizes heat rejection\n\nIn 2036 device: fins replaced by\npassive radiator surface.\nMGTD ensures heat only flows\nup into this layer — never back down.'
+  };
+  cpuAboveGroup.add(f);
+  hsFins.push(f);
+}
+
+// Heatsink base (in cpuAboveGroup)
+const hsBase = new THREE.Mesh(
+  new THREE.BoxGeometry(3.0, 0.12, 2.0),
+  new THREE.MeshStandardMaterial({ color: 0x90a4ae, roughness: 0.3, metalness: 0.9 })
+);
+hsBase.position.y = 0.16;
+hsBase.userData = {
+  tag: 'HEATSINK BASE PLATE',
+  title: 'Thermal Interface — Heatsink Side',
+  body: 'Material: Al 6061 · High conductivity\nSpreads heat laterally across fin array\nInterface: contacts MGTD HIGH-ε surface\n\nHeat enters here from MGTD above.\nMGTD blocks it from flowing back down.\nNet result: one-way heat pump,\nzero power consumed.'
+};
+cpuAboveGroup.add(hsBase);
+
+// ═══════════════════════════════════════════════════════════
+// SPACECRAFT / SATELLITE RADIATOR PANEL
+// The MGTD sits between a warm instrument bay (below) and
+// a deep-space radiator panel (above). In LEO, temp swings
+// ±250°C every 90 min — MGTD manages this passively.
+// ═══════════════════════════════════════════════════════════
+
+// ── Spacecraft: two subgroups — bay below MGTD, radiator above MGTD
+const scBayGroup  = new THREE.Group(); // instrument bay → moves DOWN in explode
+const scRadGroup  = new THREE.Group(); // radiator panel → moves UP in explode
+// Solar panels stay in spacecraftContext (don't explode — they're structural)
+spacecraftContext.add(scBayGroup);
+spacecraftContext.add(scRadGroup);
+
+// --- Instrument bay body (in scBayGroup) ---
+const bayMat = new THREE.MeshStandardMaterial({
+  color: 0x1a2030, roughness: 0.5, metalness: 0.7
+});
+const bay = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.5, 2.6), bayMat);
+bay.position.y = -1.45;
+bay.userData = {
+  tag: 'INSTRUMENT BAY',
+  title: 'Satellite Electronics Bay',
+  body: 'Contains: sensors, computers, radios\nLEO orbit: ±250°C every 90 minutes\n(sunlight → eclipse → sunlight)\n\nCurrent solution: active heaters +\nmechanical louvers + heat pipes.\nAll require power and can fail.\nMGTD replaces all of this passively.'
+};
+scBayGroup.add(bay);
+
+// Bay surface detail — thermal blanket texture strips (in scBayGroup)
+for(let i=0; i<5; i++) {
+  const strip = new THREE.Mesh(
+    new THREE.BoxGeometry(3.58, 0.01, 0.3),
+    new THREE.MeshStandardMaterial({
+      color: 0xd4a820, roughness: 0.9, metalness: 0.1,
+      transparent: true, opacity: 0.7
+    })
+  );
+  strip.position.set(0, -1.19, -1.0+i*0.5);
+  scBayGroup.add(strip);
+}
+
+// MLI corner brackets (in scBayGroup)
+[[-1.7,-1.2,-1.25],[1.7,-1.2,-1.25],[-1.7,-1.2,1.25],[1.7,-1.2,1.25]].forEach(([x,y,z]) => {
+  const brk = new THREE.Mesh(
+    new THREE.BoxGeometry(0.12, 0.28, 0.12),
+    new THREE.MeshStandardMaterial({ color: 0x888, metalness: 0.8, roughness: 0.3 })
+  );
+  brk.position.set(x,y,z);
+  scBayGroup.add(brk);
+});
+
+// Instrument heat source glow (in scBayGroup)
+const heatGlowMat = new THREE.MeshStandardMaterial({
+  color: 0xff4400, emissive: 0xff3300,
+  emissiveIntensity: 0.6, transparent: true, opacity: 0.5
+});
+const heatGlow = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.01, 1.6), heatGlowMat);
+heatGlow.position.set(0, -1.19, 0);
+scBayGroup.add(heatGlow);
+
+// --- Deep-space radiator panel (in scRadGroup) ---
+const radMat = new THREE.MeshStandardMaterial({
+  color: 0xf0f4f8, roughness: 0.2, metalness: 0.6,
+  emissive: 0x001122, emissiveIntensity: 0.1
+});
+const radiator = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.06, 2.6), radMat);
+radiator.position.y = 0.35;
+radiator.userData = {
+  tag: 'DEEP-SPACE RADIATOR',
+  title: 'Thermal Radiator Panel',
+  body: 'Surface: Optical Solar Reflectors (OSR)\nRejects heat to deep space (2.7K)\nPassive — zero power required\n\nIn 2036 MGTD design:\nMGTD sits between bay and radiator.\nHeat flows bay → MGTD → radiator.\nCannot flow back — passive protection\nagainst eclipse temperature drop.'
+};
+scRadGroup.add(radiator);
+
+// Radiator surface cells — OSR (in scRadGroup)
+for(let row=0; row<4; row++) {
+  for(let col=0; col<6; col++) {
+    const cell = new THREE.Mesh(
+      new THREE.BoxGeometry(0.52, 0.015, 0.52),
+      new THREE.MeshStandardMaterial({
+        color: 0xd0e8ff, roughness: 0.1, metalness: 0.8,
+        emissive: 0x001844, emissiveIntensity: 0.2
+      })
+    );
+    cell.position.set(-1.4+col*0.56, 0.38, -0.82+row*0.56);
+    scRadGroup.add(cell);
+  }
+}
+
+// Solar panel booms extending from sides
+[-1, 1].forEach(side => {
+  // Boom
+  const boom = new THREE.Mesh(
+    new THREE.BoxGeometry(0.06, 0.06, 1.4),
+    new THREE.MeshStandardMaterial({ color: 0x999, metalness: 0.9, roughness: 0.3 })
+  );
+  boom.position.set(side * 2.3, -0.9, 0);
+  spacecraftContext.add(boom);
+
+  // Solar panel
+  const panel = new THREE.Mesh(
+    new THREE.BoxGeometry(0.05, 1.0, 1.2),
+    new THREE.MeshStandardMaterial({
+      color: 0x1a3a6a, roughness: 0.3, metalness: 0.4,
+      emissive: 0x000820, emissiveIntensity: 0.3
+    })
+  );
+  panel.position.set(side * 2.3, -0.9, 0);
+  spacecraftContext.add(panel);
+
+  // Solar cell grid lines
+  for(let g=0; g<4; g++) {
+    const gl = new THREE.Mesh(
+      new THREE.BoxGeometry(0.06, 0.01, 1.18),
+      new THREE.MeshStandardMaterial({ color: 0x334466, roughness: 0.9 })
+    );
+    gl.position.set(side*2.3, -0.45+g*0.28, 0);
+    spacecraftContext.add(gl);
+  }
+});
+
+// Stars background (small glowing points)
+const starGeo = new THREE.BufferGeometry();
+const starPositions = [];
+for(let i=0; i<120; i++) {
+  starPositions.push(
+    (Math.random()-0.5)*20,
+    (Math.random()-0.5)*16,
+    (Math.random()-0.5)*10 - 5
+  );
+}
+starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3));
+const starMat = new THREE.PointsMaterial({
+  color: 0xffffff, size: 0.04, transparent: true, opacity: 0.7
+});
+const stars = new THREE.Points(starGeo, starMat);
+spacecraftContext.add(stars);
+
+// Temp swing annotation — thin arc suggesting orbital cycle
+const arcPoints = [];
+for(let i=0; i<=32; i++) {
+  const a = (i/32) * Math.PI * 0.9 - Math.PI*0.1;
+  arcPoints.push(new THREE.Vector3(Math.cos(a)*2.4, Math.sin(a)*2.4 - 0.8, -1.5));
+}
+const arcGeo = new THREE.BufferGeometry().setFromPoints(arcPoints);
+const arcMat = new THREE.LineBasicMaterial({
+  color: 0xc9a84c, transparent: true, opacity: 0.25
+});
+const arc = new THREE.Line(arcGeo, arcMat);
+spacecraftContext.add(arc);
+
+// ═══════════════════════════════════════════════════════════
+// CONTEXT LABELS — GPU Module
+// makeLabel is defined above in the stack section
+// ═══════════════════════════════════════════════════════════
+
+// GPU chip package label → cpuBelowGroup (moves down with chip)
+const lblCpuChip = makeLabel(
+  'GPU PACKAGE',
+  'AI Accelerator · NVIDIA H100 class',
+  'Heat source: ~700W · AI inference/training',
+  '#e84855', 0.85
+);
+lblCpuChip.position.set(W/2 + 1.65, -1.26, 0);
+cpuBelowGroup.add(lblCpuChip);
+
+// GPU die label → cpuBelowGroup
+const lblCpuDie = makeLabel(
+  'GPU DIE',
+  'CUDA cores · Tensor cores · HBM',
+  'Primary heat generation: 700W per chip',
+  '#ff8a65', 0.85
+);
+lblCpuDie.position.set(W/2 + 1.65, -1.10, 0);
+cpuBelowGroup.add(lblCpuDie);
+
+// Heatsink + fins label → cpuAboveGroup (moves up with heatsink)
+const lblCpuHS = makeLabel(
+  'HEATSINK + FINS',
+  'Aluminum extrusion · GPU cooling',
+  'Receives heat from MGTD above',
+  '#90a4ae', 0.85
+);
+lblCpuHS.position.set(W/2 + 1.65, 0.38, 0);
+cpuAboveGroup.add(lblCpuHS);
+
+// Heatsink base label → cpuAboveGroup
+const lblCpuHSBase = makeLabel(
+  'HEATSINK BASE PLATE',
+  'Spreads heat across fin array',
+  'Al 6061 · Interface with MGTD',
+  '#b0bec5', 0.85
+);
+lblCpuHSBase.position.set(W/2 + 1.65, 0.16, 0);
+cpuAboveGroup.add(lblCpuHSBase);
+
+// ═══════════════════════════════════════════════════════════
+// CONTEXT LABELS — Spacecraft
+// ═══════════════════════════════════════════════════════════
+
+// Instrument bay label → scBayGroup (moves down)
+const lblScBay = makeLabel(
+  'INSTRUMENT BAY',
+  'Electronics · Sensors · Computers',
+  'Heat source · ±250°C every 90 min',
+  '#ff6b35', 0.85
+);
+lblScBay.position.set(W/2 + 1.65, -1.45, 0);
+scBayGroup.add(lblScBay);
+
+// MLI thermal blanket label → scBayGroup
+const lblScMLI = makeLabel(
+  'THERMAL BLANKET (MLI)',
+  'Multi-Layer Insulation · Kapton+Al',
+  'Passive insulation · Reduces heat loss',
+  '#d4a820', 0.85
+);
+lblScMLI.position.set(W/2 + 1.65, -1.19, 0);
+scBayGroup.add(lblScMLI);
+
+// Radiator panel label → scRadGroup (moves up)
+const lblScRad = makeLabel(
+  'DEEP-SPACE RADIATOR',
+  'Optical Solar Reflectors (OSR)',
+  'Rejects heat to space passively',
+  '#cfd8dc', 0.85
+);
+lblScRad.position.set(W/2 + 1.65, 0.35, 0);
+scRadGroup.add(lblScRad);
+
+// Solar arrays label → stays in spacecraftContext (static — structural)
+const lblScSolar = makeLabel(
+  'SOLAR ARRAY',
+  'Multi-junction · Power generation',
+  'Swings +120°C (sun) / -150°C (eclipse)',
+  '#c9a84c', 0.85
+);
+lblScSolar.position.set(3.5, -0.9, 0);
+spacecraftContext.add(lblScSolar);
+
+// ═══════════════════════════════════════════════════════════
+// ALL CLICKABLE MESHES
+// Defined here after every mesh is created — safe to reference all
+// ═══════════════════════════════════════════════════════════
+const clickable = [
+  // Main stack (always visible)
+  plateTop, gap, plateBot, pcb,
+  // GPU Module context
+  chip, die, hsBase, ...hsFins,
+  // Spacecraft context
+  bay, radiator
+];
+
+// ═══════════════════════════════════════════════════════════
+// MOUSE / TOUCH INTERACTION
+// ═══════════════════════════════════════════════════════════
+let isDragging = false, lastX = 0, lastY = 0;
+let rotY = 0.3, rotX = 0.2;
+let targetRotY = 0.3, targetRotX = 0.2;
+let autoRotate = true;
+let zoom = 1.0, targetZoom = 1.0;
+
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+canvas.addEventListener('mousedown', e => {
+  isDragging = true; lastX = e.clientX; lastY = e.clientY;
+  autoRotate = false;
+});
+canvas.addEventListener('mousemove', e => {
+  if(isDragging) {
+    targetRotY += (e.clientX - lastX) * 0.008;
+    targetRotX += (e.clientY - lastY) * 0.006;
+    targetRotX = Math.max(-0.6, Math.min(0.8, targetRotX));
+    lastX = e.clientX; lastY = e.clientY;
+  }
+  // Hover detection
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(clickable);
+  canvas.style.cursor = hits.length > 0 ? 'pointer' : 'grab';
+});
+canvas.addEventListener('mouseup', e => {
+  if(!isDragging) return;
+  // Check click
+  const dx = Math.abs(e.clientX - lastX), dy = Math.abs(e.clientY - lastY);
+  if(dx < 5 && dy < 5) handleClick(e.clientX, e.clientY);
+  isDragging = false;
+  setTimeout(() => { autoRotate = true; }, 4000);
+});
+canvas.addEventListener('wheel', e => {
+  targetZoom = Math.max(0.5, Math.min(2.5, targetZoom + e.deltaY * 0.001));
+  autoRotate = false;
+  setTimeout(() => { autoRotate = true; }, 2000);
+});
+
+// Touch
+canvas.addEventListener('touchstart', e => {
+  isDragging = true;
+  lastX = e.touches[0].clientX; lastY = e.touches[0].clientY;
+  autoRotate = false;
+}, { passive: true });
+canvas.addEventListener('touchmove', e => {
+  if(!isDragging) return;
+  targetRotY += (e.touches[0].clientX - lastX) * 0.008;
+  targetRotX += (e.touches[0].clientY - lastY) * 0.006;
+  targetRotX = Math.max(-0.6, Math.min(0.8, targetRotX));
+  lastX = e.touches[0].clientX; lastY = e.touches[0].clientY;
+}, { passive: true });
+canvas.addEventListener('touchend', () => {
+  isDragging = false;
+  setTimeout(() => { autoRotate = true; }, 4000);
+});
+
+function handleClick(cx, cy) {
+  mouse.x = (cx / window.innerWidth) * 2 - 1;
+  mouse.y = -(cy / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(clickable);
+  if(hits.length > 0) {
+    const obj = hits[0].object;
+    if(obj.userData.tag) showInfo(obj.userData);
+    highlightLayer(obj.userData.layerIndex);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// INFO PANEL
+// ═══════════════════════════════════════════════════════════
+function showInfo(data) {
+  const panel = document.getElementById('info');
+  panel.innerHTML = `
+    <div class="info-tag">${data.tag}</div>
+    <div class="info-title">${data.title}</div>
+    <div class="info-body">${data.body.replace(/\n/g,'<br>').replace(/(ε ≈ [0-9.]+|p&lt;[0-9.]+|[0-9.]+%|η = [0-9.]+)/g,'<span class="info-val">$1</span>')}</div>
+  `;
+}
+
+function resetInfo() {
+  document.getElementById('info').innerHTML = `
+    <div class="info-tag">2036 MODEL · ENGINEERING VISION</div>
+    <div class="info-title">This is our model of the future device</div>
+    <div class="info-body">
+      Not built or tested — this is our vision<br>
+      of what the MGTD becomes in 10–20 years.<br>
+      <span class="info-val">LAYER DETAIL</span> auto-explodes all layers.<br>
+      Click any layer for specs.
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════════════════════════════
+// HIGHLIGHT
+// ═══════════════════════════════════════════════════════════
+let hlTimeout;
+function highlightLayer(idx) {
+  clearTimeout(hlTimeout);
+  document.querySelectorAll('.leg-row').forEach((r,i) => {
+    r.classList.toggle('active-leg', i === idx);
+  });
+  hlTimeout = setTimeout(() => {
+    document.querySelectorAll('.leg-row').forEach(r => r.classList.remove('active-leg'));
+    resetInfo();
+  }, 5000);
+}
+
+// Legend clicks
+// Legend click handlers are attached dynamically inside updateLegend()
+
+// ═══════════════════════════════════════════════════════════
+// EXPLODE VIEW
+// ═══════════════════════════════════════════════════════════
+let exploded = false;
+let explodeProgress = 0;
+const normalY = { top: -0.21, gap: -0.525, bot: -0.84 };
+const explodedY = { top: 0.8, gap: -0.525, bot: -1.8 };
+
+document.getElementById('explodeBtn').addEventListener('click', () => {
+  exploded = !exploded;
+  document.getElementById('explodeBtn').textContent = exploded ? '⊖ COLLAPSE' : '⊕ EXPLODE VIEW';
+  document.getElementById('heatflow').style.opacity = exploded ? '1' : '0';
+});
+
+// ═══════════════════════════════════════════════════════════
+// VIEW SWITCHING
+// ═══════════════════════════════════════════════════════════
+
+// ── Legend data for each view
+// Each entry: { header, footer, rows: [{dot, border, bg, name, sub, color, layerIdx, info}] }
+const legendDefs = {
+  0: { // Overview
+    header: '▲ HEATSINK (heat exits here)',
+    footer: '▲ CHIP (heat enters here)',
+    rows: [
+      { dot:'#1a1a2e', border:'#3d5afe', bg:'rgba(61,90,254,0.06)', name:'HIGH-ε SURFACE', sub:'Black Anodized Al · ε ≈ 0.95', color:'#90caf9', layerIdx:0 },
+      { dot:'rgba(0,229,200,0.2)', border:'#00e5c8', bg:'rgba(0,229,200,0.05)', name:'VACUUM MICRO-GAP', sub:'<10 µm · <1 Torr · hermetic', color:'#00e5c8', layerIdx:1 },
+      { dot:'linear-gradient(135deg,#c9a030,#e8c060)', border:'#c9a84c', bg:'rgba(201,168,76,0.06)', name:'LOW-ε SURFACE', sub:'Gold Coating · ε ≈ 0.02', color:'#e8c96a', layerIdx:2 },
+      { dot:'#0a2a14', border:'#1a4a25', bg:'rgba(0,255,100,0.04)', name:'PCB MOUNT BASE', sub:'Circuit board · thermal interface', color:'#4caf50', layerIdx:3 },
+    ]
+  },
+  1: { // GPU Module
+    header: '▲ HEATSINK + FINS (heat exits)',
+    footer: '▲ GPU PACKAGE (heat source)',
+    rows: [
+      { dot:'#90a4ae', border:'#b0bec5', bg:'rgba(176,190,197,0.06)', name:'HEATSINK + FINS', sub:'Aluminum extrusion · cooling', color:'#b0bec5', mesh: hsFins[0] },
+      { dot:'#607d8b', border:'#90a4ae', bg:'rgba(96,125,139,0.06)', name:'HEATSINK BASE PLATE', sub:'Al 6061 · spreads heat', color:'#90a4ae', mesh: hsBase },
+      { dot:'#1a1a2e', border:'#3d5afe', bg:'rgba(61,90,254,0.06)', name:'HIGH-ε SURFACE', sub:'Black Anodized Al · ε ≈ 0.95', color:'#90caf9', layerIdx:0 },
+      { dot:'rgba(0,229,200,0.2)', border:'#00e5c8', bg:'rgba(0,229,200,0.05)', name:'VACUUM MICRO-GAP', sub:'<10 µm · <1 Torr · MGTD', color:'#00e5c8', layerIdx:1 },
+      { dot:'linear-gradient(135deg,#c9a030,#e8c060)', border:'#c9a84c', bg:'rgba(201,168,76,0.06)', name:'LOW-ε SURFACE', sub:'Gold Coating · ε ≈ 0.02', color:'#e8c96a', layerIdx:2 },
+      { dot:'#2a2a3a', border:'#ff8a65', bg:'rgba(255,138,101,0.06)', name:'GPU DIE', sub:'CUDA cores · Tensor cores · 700W', color:'#ff8a65', mesh: die },
+      { dot:'#1a1a2a', border:'#e84855', bg:'rgba(232,72,85,0.06)', name:'GPU PACKAGE', sub:'H100 class · substrate · IHS', color:'#ff8a65', mesh: chip },
+    ]
+  },
+  2: null, // unused
+  3: { // Spacecraft
+    header: '▲ DEEP-SPACE RADIATOR (heat exits)',
+    footer: '▲ INSTRUMENT BAY (heat source)',
+    rows: [
+      { dot:'#d0e0f0', border:'#cfd8dc', bg:'rgba(207,216,220,0.06)', name:'DEEP-SPACE RADIATOR', sub:'OSR tiles · rejects heat to space', color:'#cfd8dc', mesh: radiator },
+      { dot:'#1a1a2e', border:'#3d5afe', bg:'rgba(61,90,254,0.06)', name:'HIGH-ε SURFACE', sub:'Black Anodized Al · ε ≈ 0.95', color:'#90caf9', layerIdx:0 },
+      { dot:'rgba(0,229,200,0.2)', border:'#00e5c8', bg:'rgba(0,229,200,0.05)', name:'VACUUM MICRO-GAP', sub:'<10 µm · <1 Torr · MGTD', color:'#00e5c8', layerIdx:1 },
+      { dot:'linear-gradient(135deg,#c9a030,#e8c060)', border:'#c9a84c', bg:'rgba(201,168,76,0.06)', name:'LOW-ε SURFACE', sub:'Gold Coating · ε ≈ 0.02', color:'#e8c96a', layerIdx:2 },
+      { dot:'#2a1a00', border:'#d4a820', bg:'rgba(212,168,32,0.06)', name:'THERMAL BLANKET (MLI)', sub:'Kapton+Al · passive insulation', color:'#d4a820', info:{ tag:'THERMAL BLANKET (MLI)', title:'Multi-Layer Insulation', body:'Material: Kapton + aluminum foil\nLayers: 10–40 alternating sheets\nFunction: Passive thermal insulation\n\nReduces radiative heat loss from bay.\nAllows MGTD to manage net flow\ndirectionally without fighting MLI.' } },
+      { dot:'#1a2030', border:'#ff6b35', bg:'rgba(255,107,53,0.06)', name:'INSTRUMENT BAY', sub:'Electronics · ±250°C swings', color:'#ff6b35', mesh: bay },
+    ]
+  }
+};
+
+function updateLegend(viewIdx) {
+  const def = legendDefs[viewIdx] || legendDefs[0];
+  const mono = "'Share Tech Mono',monospace";
+  let html = '';
+
+  // Header
+  html += `<div style="font-family:${mono};font-size:8px;color:#b0bec5;letter-spacing:1px;text-align:right;margin-bottom:6px;">${def.header}</div>`;
+
+  // Rows — give every row a data-row-idx so we can attach click handlers to ALL
+  def.rows.forEach((r, i) => {
+    const h = r.name === 'VACUUM MICRO-GAP' ? '18px' : '10px';
+    html += `
+      <div class="leg-row" data-row-idx="${i}" style="display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:3px;margin-bottom:2px;background:${r.bg};border:1px solid ${r.border}22;cursor:pointer;transition:border-color .15s;">
+        <div style="width:28px;height:${h};background:${r.dot};border:1.5px solid ${r.border};border-radius:2px;flex-shrink:0;"></div>
+        <div>
+          <div style="font-family:${mono};font-size:9px;color:${r.color};font-weight:600;letter-spacing:1px;">${r.name}</div>
+          <div style="font-family:${mono};font-size:8px;color:#546e7a;">${r.sub}</div>
+        </div>
+      </div>`;
+  });
+
+  // Footer
+  html += `<div style="font-family:${mono};font-size:8px;color:#b0bec5;letter-spacing:1px;text-align:right;margin-top:6px;">${def.footer}</div>`;
+
+  document.getElementById('legend-rows').innerHTML = html;
+
+  // Attach click handlers to ALL rows
+  document.querySelectorAll('#legend-rows .leg-row').forEach(el => {
+    const i = parseInt(el.dataset.rowIdx);
+    const r = def.rows[i];
+    if(!r) return;
+
+    el.addEventListener('mouseenter', () => {
+      el.style.borderColor = r.border + '88';
+    });
+    el.addEventListener('mouseleave', () => {
+      el.style.borderColor = r.border + '22';
+    });
+
+    el.addEventListener('click', () => {
+      // Highlight border briefly
+      el.style.borderColor = r.border;
+      setTimeout(() => { el.style.borderColor = r.border + '22'; }, 800);
+
+      if(r.layerIdx !== undefined) {
+        // Stack layer — highlight 3D object + show its userData
+        const obj = [plateTop, gap, plateBot, pcb][r.layerIdx];
+        if(obj && obj.userData.tag) showInfo(obj.userData);
+        highlightLayer(r.layerIdx);
+      } else if(r.mesh) {
+        // Context layer — show mesh userData
+        if(r.mesh.userData && r.mesh.userData.tag) showInfo(r.mesh.userData);
+      } else if(r.info) {
+        // Fallback: inline info object on the row
+        showInfo(r.info);
+      }
+    });
+  });
+}
+
+// Build legend on load
+updateLegend(0);
+let currentView = 0;
+const viewCameras = [
+  { pos: [4, 3, 5],    look: [0,0,0] },      // overview — angled 3D
+  { pos: [0, 5, 4],    look: [0,-0.5,0] },   // GPU Module — top-down
+  { pos: [2.5, 1.5, 5], look: [0,-0.5,0] },  // layer detail — front-elevated, shows stack clearly
+  { pos: [3, 4, 4],    look: [0,-0.2,0] },   // spacecraft
+];
+
+document.querySelectorAll('.vbtn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.vbtn').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+    currentView = parseInt(this.dataset.view);
+
+    cpuContext.visible = currentView === 1;
+    spacecraftContext.visible = currentView === 3;
+
+    // Update legend to show layers for this view
+    updateLegend(currentView);
+
+    // Collapse explode when switching views (user can still manually explode)
+    exploded = false;
+    document.getElementById('explodeBtn').textContent = '⊕ EXPLODE VIEW';
+    document.getElementById('heatflow').style.opacity = '0';
+
+    const target = viewCameras[currentView];
+    targetCamPos = { x: target.pos[0], y: target.pos[1], z: target.pos[2] };
+    targetRotY = 0.3; targetRotX = 0.2;
+    autoRotate = false;
+    setTimeout(() => { autoRotate = true; }, 3000);
+
+    // Show context-specific info
+    const contextInfo = {
+      1: { tag:'GPU MODULE · 2036', title:'AI Accelerator Thermal Interface',
+           body:'MGTD replaces thermal paste between\nGPU die and heatsink. Heat flows chip→up\nthrough MGTD to fins. No fan needed.\n\nGPU: ~700W → MGTD → Heatsink: 40°C\nDirectional — heat cannot flow back.\nEliminates throttling · saves data center power.' },
+      3: { tag:'SPACECRAFT · LEO ORBIT', title:'Satellite Radiator Panel',
+           body:'LEO satellites swing ±250°C every\n90 min (sunlight→eclipse cycles).\nActive heaters + louvers = failure risk.\n\nMGTD manages this passively:\nRadiates to deep space in one direction.\nZero power · zero moving parts.\nNASA target: 2030–2036 deployment.' }
+    };
+    if(contextInfo[currentView]) {
+      document.getElementById('info').innerHTML = `
+        <div class="info-tag">${contextInfo[currentView].tag}</div>
+        <div class="info-title">${contextInfo[currentView].title}</div>
+        <div class="info-body">${contextInfo[currentView].body.replace(/\n/g,'<br>')}</div>
+      `;
+    } else {
+      resetInfo();
+    }
+  });
+});
+
+let targetCamPos = { x: 4, y: 3, z: 5 };
+
+// ═══════════════════════════════════════════════════════════
+// ANIMATION LOOP
+// ═══════════════════════════════════════════════════════════
+let t = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  t += 0.016;
+
+  // Auto rotate
+  if(autoRotate) {
+    targetRotY += 0.004;
+  }
+
+  // Smooth camera rotation
+  rotY += (targetRotY - rotY) * 0.06;
+  rotX += (targetRotX - rotX) * 0.06;
+  zoom += (targetZoom - zoom) * 0.06;
+
+  stack.rotation.y = rotY;
+  stack.rotation.x = rotX;
+  cpuContext.rotation.y = rotY;
+  cpuContext.rotation.x = rotX;
+  spacecraftContext.rotation.y = rotY;
+  spacecraftContext.rotation.x = rotX;
+
+  // Spacecraft heat glow pulses — simulates instrument warmth cycling
+  if(currentView === 3) {
+    heatGlowMat.emissiveIntensity = 0.3 + 0.4*Math.abs(Math.sin(t * 0.4));
+    heatGlowMat.opacity = 0.3 + 0.25*Math.abs(Math.sin(t * 0.4));
+    // Radiator subtly pulses cold-blue as it emits to deep space
+    radMat.emissiveIntensity = 0.05 + 0.04*Math.abs(Math.sin(t * 0.5 + 1.0));
+  }
+
+  // Camera position smooth
+  camera.position.x += (targetCamPos.x * zoom - camera.position.x) * 0.05;
+  camera.position.y += (targetCamPos.y * zoom - camera.position.y) * 0.05;
+  camera.position.z += (targetCamPos.z * zoom - camera.position.z) * 0.05;
+  camera.lookAt(0, -0.5, 0);
+
+  // Explode animation
+  if(exploded) {
+    explodeProgress = Math.min(1, explodeProgress + 0.04);
+  } else {
+    explodeProgress = Math.max(0, explodeProgress - 0.04);
+  }
+  const ep = explodeProgress;
+  const ease = ep * ep * (3 - 2*ep); // smoothstep
+  plateTop.position.y = normalY.top + (explodedY.top - normalY.top) * ease;
+  gap.position.y     = normalY.gap + (explodedY.gap - normalY.gap) * ease;
+  plateBot.position.y = normalY.bot + (explodedY.bot - normalY.bot) * ease;
+  standoffs.forEach(s => { s.position.y = -0.525 + (explodedY.gap + 0.525) * ease * 0.5; });
+  // PCB group (mesh + traces + vias) all move together
+  pcbGroup.position.y = -1.15 + (-2.6 - (-1.15)) * ease;
+  // Labels move with their layers
+  layerLabels[0].position.y = labelNormalY[0] + (labelExplodedY[0] - labelNormalY[0]) * ease;
+  layerLabels[1].position.y = labelNormalY[1] + (labelExplodedY[1] - labelNormalY[1]) * ease;
+  layerLabels[2].position.y = labelNormalY[2] + (labelExplodedY[2] - labelNormalY[2]) * ease;
+  layerLabels[3].position.y = labelNormalY[3] + (labelExplodedY[3] - labelNormalY[3]) * ease;
+  // Connectors move with their layers
+  layerConns[0].position.y = labelNormalY[0] + (labelExplodedY[0] - labelNormalY[0]) * ease;
+  layerConns[1].position.y = labelNormalY[1] + (labelExplodedY[1] - labelNormalY[1]) * ease;
+  layerConns[2].position.y = labelNormalY[2] + (labelExplodedY[2] - labelNormalY[2]) * ease;
+  layerConns[3].position.y = labelNormalY[3] + (labelExplodedY[3] - labelNormalY[3]) * ease;
+
+  // ── GPU Module context explode
+  // Below (chip + die + labels) move DOWN
+  cpuBelowGroup.position.y = -1.3 * ease;
+  // Above (heatsink + fins + labels) move UP
+  cpuAboveGroup.position.y = 1.2 * ease;
+
+  // ── Spacecraft context explode
+  // Bay group (bay + MLI + labels) moves DOWN
+  scBayGroup.position.y = -1.5 * ease;
+  // Radiator group (panel + cells + label) moves UP
+  scRadGroup.position.y = 1.1 * ease;
+
+  // Animate scan particles in gap — drift upward to show heat flow direction
+  scanParticles.forEach((p, i) => {
+    const speed = p.userData.speed;
+    const phase = p.userData.phase;
+    const axis = p.userData.axis;
+    if(axis === 'x') {
+      p.position.x = Math.sin(t * speed + phase) * 1.1;
+    } else {
+      p.position.z = Math.sin(t * speed + phase) * 0.7;
+    }
+    // Drift upward through gap (heat flows chip→heatsink = bottom→top = +y)
+    const baseY = gap.position.y - 0.2;
+    const rangeY = 0.4;
+    p.position.y = baseY + ((t * speed * 0.3 + phase) % 1.0) * rangeY;
+    p.material.opacity = 0.2 + 0.5 * Math.sin(Math.PI * ((t * speed * 0.3 + phase) % 1.0));
+    p.material.emissiveIntensity = 1 + Math.sin(t * speed + phase) * 0.8;
+  });
+
+  // Gap edge glow pulse
+  matGapEdge.emissiveIntensity = 0.5 + 0.4 * Math.sin(t * 2);
+  matGapEdge.opacity = 0.5 + 0.25 * Math.sin(t * 1.5);
+
+  // Gold plate shimmer — pulses warmly
+  matGold.emissive.setHex(0x8a5c00);
+  matGold.emissiveIntensity = 0.45 + 0.15 * Math.sin(t * 0.8);
+
+  renderer.render(scene, camera);
+}
+
+// ═══════════════════════════════════════════════════════════
+// STARTUP
+// ═══════════════════════════════════════════════════════════
+setTimeout(() => {
+  const loader = document.getElementById('loader');
+  loader.style.opacity = '0';
+  setTimeout(() => { loader.style.display = 'none'; }, 500);
+}, 1000);
+
+animate();
+</script>
+</body>
+</html>
