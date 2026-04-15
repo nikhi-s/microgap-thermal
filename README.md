@@ -1,7 +1,8 @@
 # Micro-Gap Thermal Diode — Experimental Research Repository
 
 **Nikhitha Swaminathan** · Lowery Freshman Center, Allen ISD, Allen, Texas  
-USPTO Provisional Patent No. 64/013,320 · Filed March 2026
+USPTO Provisional Patent No. 64/013,320 · Filed March 2026  
+**Interactive 3D Device Model:** https://nikhi-s.github.io/microgap-thermal/
 
 ---
 
