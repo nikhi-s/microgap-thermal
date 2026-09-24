@@ -1,0 +1,25 @@
+{
+  "status": "all assertions passed",
+  "R_measured": -0.0675,
+  "Setup: temperatures and emissivity models": null,
+  "Stage 2A: gas never rectifies": {
+    "q_gas_dT5": 286.119557195307,
+    "q_gas_dT20": 1144.4534749150992,
+    "q_gas_dT60": 3432.726077325002
+  },
+  "Stage 2B: constant emissivity gives zero": {
+    "max_abs_R": 0.0
+  },
+  "Stage 2C: temperature-dependent emissivity": {
+    "R_rad_n1_dT20": 0.0592506534998547
+  },
+  "Independent limits and symmetry": {
+    "gas_integral_analytic_check": "passed",
+    "symmetry_and_pressure_limits": "passed"
+  },
+  "Stage 2D": {
+    "R_total_36Torr": 0.0017267934138849306,
+    "R_total_7.5e-6Torr": 0.059219231149102436,
+    "max_abs_R_36Torr": 0.002591157079365969
+  }
+}
