@@ -10,7 +10,7 @@ Computes:
   5. Publication-quality figures
 
 Author: Nikhitha Swaminathan
-Date: February 2026
+Date: February 2026 (paths updated Sept 2026: reads ../data, writes ../figures/regenerated)
 """
 
 import numpy as np
@@ -48,8 +48,40 @@ COLORS = {
     'drift': '#FF5722',
 }
 
-OUTPUT_DIR = '/home/claude/plots'
+# ============================================================================
+# PATHS — run from the repo's analysis/ folder; raw logs are read from ../data
+#   Override with environment variables MGTD_DATA_DIR / MGTD_OUT_DIR if needed.
+# ============================================================================
+HERE = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.environ.get('MGTD_DATA_DIR', os.path.join(HERE, '..', 'data'))
+OUTPUT_DIR = os.environ.get('MGTD_OUT_DIR', os.path.join(HERE, '..', 'figures', 'regenerated'))
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+DATA_FILES = {
+    # Atmospheric ABBA runs (508 um unless noted)
+    'contact_air':  'Module-A_contact_G-G_ABBA_16Feb_Control.txt',              # SiO2-SiO2 contact
+    'sg_air':       'Module-D_20mil_S-G_Rectification_19Feb_retake.txt',        # steel-glass, air
+    'gg_air':       'Module-E_20mil_G-G_Rectification_20Feb_Control.txt',       # glass-glass, air
+    # Partial-vacuum ABBA runs (~36 Torr, 28.5 inHg gauge)
+    'gg_vac':       'Module-E_20mil_G-G_Rectification_22Feb_control_Vacuum_fixedTime.txt',  # TEST 16B
+    'sg_vac':       'Module-E_20mil_S-G_Rectification_23Feb_Vacuum_fixedTime.txt',          # TEST 16C
+    'sg_vac_a2':    'Module-E_20mil_S-G_Rectification_24Feb_Vacuum_fixedTime_A2_Rerun.txt', # TEST 16E
+    # Forward-only gap sweep, glass-glass, air (gap in um -> file)
+    'sweep_7.62':   'Module-C_1by3Mil_G-G_GapSweep_17Feb.txt',   # 0.3 mil Kapton (firmware header says 8.5um)
+    'sweep_25.4':   'Module-B_1Mil_G-G_GapSweep_17Feb.txt',
+    'sweep_254':    'Module-B_10Mil_G-G_GapSweep_16Feb.txt',
+    'sweep_508':    'Module-B_20mil_G-G_GapSweep_20Feb.txt',
+}
+
+
+def data_path(key, required=True):
+    """Full path to a raw log; raise a clear error if it is missing."""
+    p = os.path.join(DATA_DIR, DATA_FILES[key])
+    if not os.path.exists(p):
+        if required:
+            raise FileNotFoundError(f"Missing raw data file for '{key}': {p}")
+        return None
+    return p
 
 
 # ============================================================================
@@ -60,7 +92,7 @@ def load_abba_data(filepath):
     phases = {}
     with open(filepath, encoding='utf-8', errors='replace') as f:
         for line in f:
-            line = line.strip().replace('\r', '')
+            line = line.replace('\x00', '').strip().replace('\r', '')
             if not line or line.startswith('#'):
                 continue
             parts = line.split(',')
@@ -276,9 +308,10 @@ def eta_uncertainty(a_stats_list, b_stats_list):
 # LOAD DATA
 # ============================================================================
 print("Loading data...")
-steel_glass = load_abba_data('/home/claude/abba_steel_glass_508um.txt')
-glass_glass = load_abba_data('/home/claude/abba_glass_glass_508um.txt')
-sio2_contact = load_abba_data('/home/claude/abba_sio2_contact.txt')
+# Atmospheric ABBA runs (this script analyses the air experiments)
+steel_glass = load_abba_data(data_path('sg_air'))
+glass_glass = load_abba_data(data_path('gg_air'))
+sio2_contact = load_abba_data(data_path('contact_air'))
 
 # Define phase groups for each experiment
 experiments = {

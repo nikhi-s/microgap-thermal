@@ -10,6 +10,18 @@ predicts how gap distance, material choice, and air vs vacuum affect
 the heat transfer distribution.
 
 Author: Nikhitha Swaminathan, February 2026
+
+Updated Sept 2026:
+  * Calibration points and gap-sweep sums are read from the raw logs in ../data.
+  * Smallest gap is 7.62 um (0.3 mil Kapton), not 8.5 um.
+  * "Vacuum" in this model means gas conduction removed entirely (hard vacuum,
+    below ~1e-2 Torr). At the ~36 Torr of the experiment gas conduction is
+    essentially unchanged (simulations/sim1_pressure.py).
+  * The steel-glass minus glass-glass sum difference is a material-contrast
+    signal, not rectification (rectification = forward vs reverse of one pair).
+  * The model is uncalibrated in absolute terms (predicts ~680 mV sums where
+    ~970-1030 mV were measured); use it for trends only.
+  Figures are written to ../figures/regenerated/.
 """
 
 import numpy as np
@@ -17,8 +29,40 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import os
 
-OUTPUT_DIR = '/home/claude/plots'
+# ============================================================================
+# PATHS — run from the repo's analysis/ folder; raw logs are read from ../data
+#   Override with environment variables MGTD_DATA_DIR / MGTD_OUT_DIR if needed.
+# ============================================================================
+HERE = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.environ.get('MGTD_DATA_DIR', os.path.join(HERE, '..', 'data'))
+OUTPUT_DIR = os.environ.get('MGTD_OUT_DIR', os.path.join(HERE, '..', 'figures', 'regenerated'))
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+DATA_FILES = {
+    # Atmospheric ABBA runs (508 um unless noted)
+    'contact_air':  'Module-A_contact_G-G_ABBA_16Feb_Control.txt',              # SiO2-SiO2 contact
+    'sg_air':       'Module-D_20mil_S-G_Rectification_19Feb_retake.txt',        # steel-glass, air
+    'gg_air':       'Module-E_20mil_G-G_Rectification_20Feb_Control.txt',       # glass-glass, air
+    # Partial-vacuum ABBA runs (~36 Torr, 28.5 inHg gauge)
+    'gg_vac':       'Module-E_20mil_G-G_Rectification_22Feb_control_Vacuum_fixedTime.txt',  # TEST 16B
+    'sg_vac':       'Module-E_20mil_S-G_Rectification_23Feb_Vacuum_fixedTime.txt',          # TEST 16C
+    'sg_vac_a2':    'Module-E_20mil_S-G_Rectification_24Feb_Vacuum_fixedTime_A2_Rerun.txt', # TEST 16E
+    # Forward-only gap sweep, glass-glass, air (gap in um -> file)
+    'sweep_7.62':   'Module-C_1by3Mil_G-G_GapSweep_17Feb.txt',   # 0.3 mil Kapton (firmware header says 8.5um)
+    'sweep_25.4':   'Module-B_1Mil_G-G_GapSweep_17Feb.txt',
+    'sweep_254':    'Module-B_10Mil_G-G_GapSweep_16Feb.txt',
+    'sweep_508':    'Module-B_20mil_G-G_GapSweep_20Feb.txt',
+}
+
+
+def data_path(key, required=True):
+    """Full path to a raw log; raise a clear error if it is missing."""
+    p = os.path.join(DATA_DIR, DATA_FILES[key])
+    if not os.path.exists(p):
+        if required:
+            raise FileNotFoundError(f"Missing raw data file for '{key}': {p}")
+        return None
+    return p
 
 plt.rcParams.update({
     'font.size': 11, 'font.family': 'serif',
@@ -82,13 +126,30 @@ def R_gap_total(gap_m, eps1, eps2, T_avg_K=340):
 #   R_down = ratio * R_up
 #   R_contact = (R_down - R_fixed) / 2
 
-# ABBA data: (Vtop, Vbot, Tt°C, Tb°C) — plateau averages
+# ABBA data: (Vtop, Vbot, Tt°C, Tb°C) — plateau averages (last 600 s of each
+# forward phase), read from the atmospheric raw logs.
+def _abba_plateau(filepath, phase, last_n=600):
+    rows = []
+    with open(filepath, encoding='utf-8', errors='replace') as f:
+        for line in f:
+            line = line.replace('\x00', '').strip().replace('\r', '')
+            p = line.split(',')
+            if line.startswith('#') or len(p) < 11 or p[1] != phase:
+                continue
+            try:
+                rows.append((float(p[4]), float(p[5]), float(p[6]), float(p[7])))
+            except ValueError:
+                continue
+    r = np.array(rows[-last_n:])
+    return tuple(float(round(v, 1)) for v in r.mean(axis=0))
+
+
 abba = {
-    'contact_A1': (610.7, 397.1, 65.9, 52.2),
-    'contact_A2': (612.9, 395.8, 69.0, 53.2),
-    'gg508_A1':   (636.9, 378.7, 87.3, 59.9),
-    'sg508_A1':   (657.3, 371.6, 91.7, 62.6),
-    'sg508_A2':   (658.8, 370.8, 91.6, 63.2),
+    'contact_A1': _abba_plateau(data_path('contact_air'), 'A1_FWD_HEAT'),
+    'contact_A2': _abba_plateau(data_path('contact_air'), 'A2_FWD_HEAT'),
+    'gg508_A1':   _abba_plateau(data_path('gg_air'), 'A1_FWD_HEAT'),
+    'sg508_A1':   _abba_plateau(data_path('sg_air'), 'A1_FWD_HEAT'),
+    'sg508_A2':   _abba_plateau(data_path('sg_air'), 'A2_FWD_HEAT'),
 }
 
 print("=" * 70)
@@ -206,7 +267,24 @@ for key, (Vt, Vb, Tt, Tb) in abba.items():
     print(f"  {key:<18s} | {Vt:5.0f} {r['Vtop']:5.0f} | {Vb:5.0f} {r['Vbot']:5.0f} | {S_m:5.0f} {r['Sum']:5.0f} | {err:4.1f}%")
 
 # Gap sweep validation (different heater temperature ~50°C)
-gap_sweep = {8.5: (622, 363), 25.4: (625, 356), 254: (687, 277)}
+def _sweep_plateau(filepath):
+    """Mean (Vtop, Vbot) over the PLATEAU rows of a 13-column gap-sweep log."""
+    vt, vb = [], []
+    with open(filepath, encoding='utf-8', errors='replace') as f:
+        for line in f:
+            line = line.replace('\x00', '').strip().replace('\r', '')
+            p = line.split(',')
+            if line.startswith('#') or len(p) != 13 or p[1] != 'PLATEAU':
+                continue
+            try:
+                vt.append(float(p[5])); vb.append(float(p[6]))
+            except ValueError:
+                continue
+    return (float(np.mean(vt)), float(np.mean(vb)))
+
+
+SWEEP_GAPS = [7.62, 25.4, 254, 508]
+gap_sweep = {g: _sweep_plateau(data_path(f'sweep_{g:g}')) for g in SWEEP_GAPS}
 print(f"\n  Gap sweep (T_heater ≈ 50°C):")
 for gap_um, (Vt, Vb) in sorted(gap_sweep.items()):
     r = predict(gap_um * 1e-6, 'glass', 50)
@@ -254,7 +332,7 @@ print(f"\n{'='*70}")
 print("AIR CONDUCTION vs RADIATION IN GAP")
 print(f"{'='*70}")
 
-for gap_um in [8.5, 25.4, 254, 508, 1000]:
+for gap_um in SWEEP_GAPS + [1000]:
     Ra = R_air(gap_um * 1e-6)
     Rr_gg = R_rad(eps_glass, eps_glass)
     Rr_sg = R_rad(eps_steel, eps_glass)
@@ -266,7 +344,7 @@ for gap_um in [8.5, 25.4, 254, 508, 1000]:
     h_r_gg = h_rad(eps_glass, eps_glass)
     h_r_sg = h_rad(eps_steel, eps_glass)
     
-    print(f"  {gap_um:>6.0f} µm:  h_air={h_a:7.1f}  h_rad(GG)={h_r_gg:.1f}  "
+    print(f"  {gap_um:>7.2f} µm:  h_air={h_a:7.1f}  h_rad(GG)={h_r_gg:.1f}  "
           f"h_rad(SG)={h_r_sg:.1f}  air/rad(GG)={h_a/h_r_gg:.0f}×  air/rad(SG)={h_a/h_r_sg:.0f}×")
 
 
@@ -274,7 +352,7 @@ for gap_um in [8.5, 25.4, 254, 508, 1000]:
 # RECTIFICATION PREDICTION
 # ============================================================================
 print(f"\n{'='*70}")
-print("RECTIFICATION PREDICTION — AIR vs VACUUM")
+print("SG vs GG SUM DIFFERENCE (material contrast) — AIR vs HARD VACUUM")
 print(f"{'='*70}")
 
 # Forward: heat → steel → gap → glass
@@ -292,7 +370,7 @@ print(f"    Difference:   {abs(r_sg_air['Sum'] - r_gg_air['Sum']):.1f} mV "
 print(f"    → Smaller than measurement uncertainty (±0.9 mV)")
 
 # In VACUUM: replace R_gap with radiation only
-print(f"\n  IN VACUUM (508 µm gap, radiation only):")
+print(f"\n  IN HARD VACUUM (508 µm gap, radiation only; < ~1e-2 Torr):")
 for label, eps_t, mat in [('Glass-Glass', eps_glass, 'glass'), ('Steel-Glass', eps_steel, 'steel')]:
     Rr = R_rad(eps_t, eps_glass)
     R_mat_top = R_steel if mat == 'steel' else R_glass
@@ -356,19 +434,20 @@ ax2.semilogx(gaps_model, sums_model_50, '--', color='#FF9800', linewidth=1.5, al
 
 # Measured ABBA data
 ax2.plot(0.5, predict(0, 'glass', 67)['Sum'], 'D', color='#4CAF50', markersize=10,
-         markeredgecolor='black', zorder=5, label='Contact ABBA (67°C)')
+         markeredgecolor='black', zorder=5, label='Model at contact ABBA (67°C)')
 ax2.plot(508, predict(508e-6, 'glass', 87)['Sum'], 's', color='#2196F3', markersize=10,
-         markeredgecolor='black', zorder=5, label='508µm GG ABBA (87°C)')
+         markeredgecolor='black', zorder=5, label='Model at 508 µm GG ABBA (87°C)')
 
 # Gap sweep measured sums (T≈50°C) — normalized through model
 for gap_um, (Vt, Vb) in gap_sweep.items():
-    ax2.plot(gap_um, predict(gap_um*1e-6, 'glass', 50)['Sum'], 'o', color='#9C27B0',
+    ax2.plot(gap_um, predict(gap_um*1e-6, 'glass', 50)['Sum'], 'o', color='#9C27B0',  # model at this gap
              markersize=8, markeredgecolor='black', zorder=5)
 ax2.plot([], [], 'o', color='#9C27B0', markersize=8, markeredgecolor='black',
-         label='Gap sweep (50°C)')
+         label='Model at gap-sweep gaps (50°C)')
 
 # Annotate flat region
-ax2.annotate('Only 4.8% drop\nover 30× gap increase\n→ gap R is tiny fraction\nof total stack R',
+_m0 = predict(SWEEP_GAPS[0]*1e-6, 'glass', 87)['Sum']; _m1 = predict(SWEEP_GAPS[-1]*1e-6, 'glass', 87)['Sum']
+ax2.annotate(f'Only {(1-_m1/_m0)*100:.1f}% drop\nover {SWEEP_GAPS[-1]/SWEEP_GAPS[0]:.0f}× gap increase\n→ gap R is tiny fraction\nof total stack R',
             xy=(50, sums_model_87[30]), fontsize=8, ha='center',
             bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.9))
 
@@ -401,7 +480,7 @@ ax1.loglog(gaps_h, h_rad_gg, '--', color='#F44336', linewidth=2, label=f'Radiati
 ax1.loglog(gaps_h, h_rad_sg, ':', color='#F44336', linewidth=2, label=f'Radiation (steel–glass, ε={eps_steel}/{eps_glass})')
 
 # Mark measured gaps
-for gap_um in [8.5, 25.4, 254, 508]:
+for gap_um in SWEEP_GAPS:
     h_a = k_air / (gap_um * 1e-6)
     ax1.plot(gap_um, h_a, 'o', color='#2196F3', markersize=8, markeredgecolor='black', zorder=5)
 
@@ -423,7 +502,7 @@ ax1.legend(fontsize=8, loc='upper right')
 ax1.set_ylim(1, 1e4)
 
 # Right: Why rectification fails in air
-ax2_gaps = [8.5, 25.4, 254, 508]
+ax2_gaps = SWEEP_GAPS
 rad_frac_gg = []
 rad_frac_sg = []
 rect_signal_air = []
@@ -451,7 +530,7 @@ width = 0.35
 
 bars1 = ax2.bar(x - width/2, rect_signal_air, width, label='In air',
                 color='#90CAF9', edgecolor='black', linewidth=0.5)
-bars2 = ax2.bar(x + width/2, rect_signal_vac, width, label='In vacuum',
+bars2 = ax2.bar(x + width/2, rect_signal_vac, width, label='Hard vacuum (< ~10⁻² Torr)',
                 color='#EF9A9A', edgecolor='black', linewidth=0.5)
 
 # Noise floor
@@ -468,10 +547,10 @@ ax2.set_xticks(x)
 ax2.set_xticklabels(gap_labels)
 ax2.set_xlabel('Gap Distance')
 ax2.set_ylabel('Expected |Signal| [mV]')
-ax2.set_title('Predicted Rectification Signal\nAir vs Vacuum')
+ax2.set_title('|Sum(SG) − Sum(GG)|, model\nAir vs hard vacuum (material contrast)')
 ax2.legend(fontsize=8)
 
-fig.suptitle('Plot 13: Why Rectification Requires Vacuum',
+fig.suptitle('Plot 13: Why Emissivity Effects Need Hard Vacuum',
              fontsize=14, fontweight='bold', y=1.02)
 fig.tight_layout()
 fig.savefig(f'{OUTPUT_DIR}/plot13_resistance_breakdown.png', bbox_inches='tight')
@@ -503,35 +582,35 @@ for g in gaps_cont:
 
 ax.semilogx(gaps_cont, sum_air_gg, '-', color='#2196F3', linewidth=2.5, label='Air: glass–glass')
 ax.semilogx(gaps_cont, sum_air_sg, '-', color='#1565C0', linewidth=2.5, alpha=0.7, label='Air: steel–glass')
-ax.semilogx(gaps_cont, sum_vac_gg, '--', color='#F44336', linewidth=2, label='Vacuum: glass–glass')
-ax.semilogx(gaps_cont, sum_vac_sg, '--', color='#C62828', linewidth=2, label='Vacuum: steel–glass')
+ax.semilogx(gaps_cont, sum_vac_gg, '--', color='#F44336', linewidth=2, label='Hard vacuum: glass–glass')
+ax.semilogx(gaps_cont, sum_vac_sg, '--', color='#C62828', linewidth=2, label='Hard vacuum: steel–glass')
 
 # Shade air-fills region
 ax.fill_between(gaps_cont, sum_vac_gg, sum_air_gg, alpha=0.06, color='blue')
 
 # Shade vacuum rectification signal
 ax.fill_between(gaps_cont, sum_vac_gg, sum_vac_sg, alpha=0.2, color='red',
-                label='Vacuum rectification signal')
+                label='SG vs GG material contrast (hard vacuum)')
 
 # Mark experimental gaps
-for gap_um in [8.5, 25.4, 254, 508]:
+for gap_um in SWEEP_GAPS:
     r = predict(gap_um*1e-6, 'glass', 87)
     ax.plot(gap_um, r['Sum'], 'o', color='#2196F3', markersize=10,
             markeredgecolor='black', markeredgewidth=1.5, zorder=5)
 
-ax.annotate('Air conduction fills this\nentire region, burying\nthe rectification signal',
+ax.annotate('Air conduction fills this\nentire region, burying\nthe emissivity contrast',
            xy=(80, np.mean([sum_air_gg[40], sum_vac_gg[40]])),
            fontsize=10, ha='center',
            bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.8))
 
-ax.annotate('In vacuum:\nemissivity contrast\ncreates detectable\nrectification signal',
+ax.annotate('Hard vacuum (< ~10⁻² Torr):\nemissivity contrast visible.\nAt ~36 Torr gas conduction\nis unchanged (Sim 1)',
            xy=(100, np.mean([sum_vac_gg[50], sum_vac_sg[50]])),
            fontsize=9, ha='center', va='top',
            bbox=dict(boxstyle='round', facecolor='#FFCDD2', alpha=0.8))
 
 ax.set_xlabel('Gap Distance [µm]', fontsize=12)
 ax.set_ylabel('Predicted TEG Sum [mV]', fontsize=12)
-ax.set_title('Plot 14: Air vs Vacuum — The Complete Picture\n'
+ax.set_title('Plot 14: Air vs Hard Vacuum — Model Picture\n'
              'Model prediction at T_heater = 87°C',
              fontsize=13, fontweight='bold')
 ax.legend(fontsize=9, loc='center left')
@@ -566,14 +645,16 @@ print(f"""
      Air/radiation ratio = {k_air/(508e-6)/h_rad(eps_glass, eps_glass):.0f}×
      Radiation fraction of gap transfer: {r508['rad_frac']:.0f}%
 
-  3. PREDICTED RECTIFICATION IN AIR: ~{abs(r_sg_air['Sum'] - r_gg_air['Sum']):.1f} mV
+  3. SG vs GG SUM DIFFERENCE IN AIR (material contrast): ~{abs(r_sg_air['Sum'] - r_gg_air['Sum']):.1f} mV
      Noise floor: ±0.9 mV
-     → Signal buried {0.9/abs(r_sg_air['Sum'] - r_gg_air['Sum']):.0f}× below noise
+     → Ratio to noise floor: {abs(r_sg_air['Sum'] - r_gg_air['Sum'])/0.9:.1f}× (a material difference, not rectification)
 
-  4. VACUUM WOULD TRANSFORM THE EXPERIMENT
+  4. HARD VACUUM (< ~1e-2 Torr) WOULD TRANSFORM THE EXPERIMENT
+     (At ~36 Torr gas conduction is unchanged -- simulations/sim1_pressure.py)
      Gap R increases from {R_gap_total(508e-6, eps_glass, eps_glass):.1f} → {R_rad(eps_glass, eps_glass):.0f} K/W
      Emissivity contrast becomes the dominant gap mechanism
-     Predicted rectification signal: ~{abs(sum_vac_sg[-1] - sum_vac_gg[-1]):.0f} mV (detectable!)
+     SG vs GG sum difference: ~{abs(sum_vac_sg[-1] - sum_vac_gg[-1]):.0f} mV (material contrast;
+     rectification itself requires temperature-dependent properties -- Simulation 2)
 """)
 
 print(f"\nPlots saved to {OUTPUT_DIR}/")

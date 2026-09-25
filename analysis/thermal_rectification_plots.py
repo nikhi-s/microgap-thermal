@@ -5,11 +5,18 @@ Thermal Rectification Experiment — Complete Figure Set
 Generates all plots for the DRSEF/ISEF project on micro-gap
 thermal rectification.
 
-Data sources:
-  - Gap sweep: hardcoded from Module B/C measurements
-  - SiO2-SiO2 contact ABBA: abba_sio2_contact.txt
-  - Steel-Glass 508µm ABBA: abba_steel_glass_508um.txt
-  - Glass-Glass 508µm ABBA: abba_glass_glass_508um.txt (control)
+Data sources (raw logs in ../data, see DATA_FILES below):
+  - Gap sweep: Module-B/C gap-sweep logs (firmware PLATEAU windows)
+  - SiO2-SiO2 contact ABBA: Module-A_contact_G-G_ABBA_16Feb_Control.txt
+  - Steel-Glass 508 um ABBA (air): Module-D_20mil_S-G_Rectification_19Feb_retake.txt
+  - Glass-Glass 508 um ABBA (air): Module-E_20mil_G-G_Rectification_20Feb_Control.txt
+  - Glass-Glass 508 um ABBA (~36 Torr): Module-E_..._22Feb_control_Vacuum_fixedTime.txt
+
+Updated Sept 2026: all values computed from the raw logs (no hardcoded
+gap-sweep numbers); smallest gap is 7.62 um (0.3 mil Kapton); Plot 2 uses a
+far-field gray-body radiation model at 340 K; Plot 8 no longer draws a
+hand-entered "vacuum prediction" curve (see simulations/ for the pressure
+model). Figures are written to ../figures/regenerated/.
 
 Author: Nikhitha Swaminathan
 Date: February 2026
@@ -51,8 +58,40 @@ COLORS = {
     'highlight': '#FFD600', # yellow
 }
 
-OUTPUT_DIR = '/home/claude/plots'
+# ============================================================================
+# PATHS — run from the repo's analysis/ folder; raw logs are read from ../data
+#   Override with environment variables MGTD_DATA_DIR / MGTD_OUT_DIR if needed.
+# ============================================================================
+HERE = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.environ.get('MGTD_DATA_DIR', os.path.join(HERE, '..', 'data'))
+OUTPUT_DIR = os.environ.get('MGTD_OUT_DIR', os.path.join(HERE, '..', 'figures', 'regenerated'))
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+DATA_FILES = {
+    # Atmospheric ABBA runs (508 um unless noted)
+    'contact_air':  'Module-A_contact_G-G_ABBA_16Feb_Control.txt',              # SiO2-SiO2 contact
+    'sg_air':       'Module-D_20mil_S-G_Rectification_19Feb_retake.txt',        # steel-glass, air
+    'gg_air':       'Module-E_20mil_G-G_Rectification_20Feb_Control.txt',       # glass-glass, air
+    # Partial-vacuum ABBA runs (~36 Torr, 28.5 inHg gauge)
+    'gg_vac':       'Module-E_20mil_G-G_Rectification_22Feb_control_Vacuum_fixedTime.txt',  # TEST 16B
+    'sg_vac':       'Module-E_20mil_S-G_Rectification_23Feb_Vacuum_fixedTime.txt',          # TEST 16C
+    'sg_vac_a2':    'Module-E_20mil_S-G_Rectification_24Feb_Vacuum_fixedTime_A2_Rerun.txt', # TEST 16E
+    # Forward-only gap sweep, glass-glass, air (gap in um -> file)
+    'sweep_7.62':   'Module-C_1by3Mil_G-G_GapSweep_17Feb.txt',   # 0.3 mil Kapton (firmware header says 8.5um)
+    'sweep_25.4':   'Module-B_1Mil_G-G_GapSweep_17Feb.txt',
+    'sweep_254':    'Module-B_10Mil_G-G_GapSweep_16Feb.txt',
+    'sweep_508':    'Module-B_20mil_G-G_GapSweep_20Feb.txt',
+}
+
+
+def data_path(key, required=True):
+    """Full path to a raw log; raise a clear error if it is missing."""
+    p = os.path.join(DATA_DIR, DATA_FILES[key])
+    if not os.path.exists(p):
+        if required:
+            raise FileNotFoundError(f"Missing raw data file for '{key}': {p}")
+        return None
+    return p
 
 
 # ============================================================================
@@ -63,7 +102,7 @@ def load_abba_data(filepath):
     phases = {}
     with open(filepath, encoding='utf-8', errors='replace') as f:
         for line in f:
-            line = line.strip().replace('\r', '')
+            line = line.replace('\x00', '').strip().replace('\r', '')
             if not line or line.startswith('#'):
                 continue
             parts = line.split(',')
@@ -116,20 +155,51 @@ def plateau_stats(data, last_n=600):
 # LOAD ALL DATA
 # ============================================================================
 print("Loading data...")
-steel_glass = load_abba_data('/home/claude/abba_steel_glass_508um.txt')
-glass_glass = load_abba_data('/home/claude/abba_glass_glass_508um.txt')
-sio2_contact = load_abba_data('/home/claude/abba_sio2_contact.txt')
+steel_glass = load_abba_data(data_path('sg_air'))
+glass_glass = load_abba_data(data_path('gg_air'))
+sio2_contact = load_abba_data(data_path('contact_air'))
 
-# Gap sweep hardcoded from analysis
-gap_sweep = {
-    'gaps_um': [0, 8.5, 25.4, 254],
-    'sums':    [1015, 986.3, 982.4, 966.6],
-    'stds':    [0, 1.0, 1.5, 1.9],
-    'cvs':     [0, 0.10, 0.15, 0.20],
-    'vtop':    [None, 622, 625, 687],
-    'vbot':    [None, 363, 356, 277],
-    'labels':  ['Contact', '8.5 µm\n(⅓ mil)', '25.4 µm\n(1 mil)', '254 µm\n(10 mil)'],
-}
+
+def load_gap_sweep(filepath):
+    """Per-run means (vtop, vbot) of the PLATEAU rows of a 13-column gap-sweep log."""
+    runs = {}
+    with open(filepath, encoding='utf-8', errors='replace') as f:
+        for line in f:
+            line = line.replace('\x00', '').strip().replace('\r', '')
+            p = line.split(',')
+            if line.startswith('#') or len(p) != 13 or p[1] != 'PLATEAU':
+                continue
+            try:
+                runs.setdefault(int(p[2]), []).append((float(p[5]), float(p[6])))
+            except ValueError:
+                continue
+    return [(np.mean([v[0] for v in r]), np.mean([v[1] for v in r])) for r in runs.values()]
+
+
+# Gap sweep from the raw logs. Contact point: contact ABBA forward phase A1
+# (last 600 s). Gapped points: mean of the firmware PLATEAU windows over all
+# runs (read ~10 min after heat-on, while V_bot is still rising).
+SWEEP_GAPS = [7.62, 25.4, 254, 508]
+_ct = plateau_stats(sio2_contact['A1_FWD_HEAT'])
+gap_sweep = {'gaps_um': [0], 'sums': [_ct['sum']], 'stds': [_ct['sum_std'] / np.sqrt(_ct['n'])],
+             'cvs': [0], 'vtop': [_ct['vtop']], 'vbot': [_ct['vbot']],
+             'labels': ['Contact', '7.62 µm\n(0.3 mil)', '25.4 µm\n(1 mil)',
+                        '254 µm\n(10 mil)', '508 µm\n(20 mil)']}
+for g in SWEEP_GAPS:
+    runs = load_gap_sweep(data_path(f'sweep_{g:g}'))
+    sums_r = [a + b for a, b in runs]
+    gap_sweep['gaps_um'].append(g)
+    gap_sweep['sums'].append(float(np.mean(sums_r)))
+    gap_sweep['stds'].append(float(np.std(sums_r, ddof=1)))
+    gap_sweep['cvs'].append(float(np.std(sums_r, ddof=1) / np.mean(sums_r) * 100))
+    gap_sweep['vtop'].append(float(np.mean([r[0] for r in runs])))
+    gap_sweep['vbot'].append(float(np.mean([r[1] for r in runs])))
+print("  Gap sweep sums (mV):", [round(v, 1) for v in gap_sweep['sums']])
+print("  Run-to-run CV of sum (%):", [round(v, 2) for v in gap_sweep['cvs'][1:]])
+
+# One gap-transfer model (paper Section 2.7)
+K_AIR, T_GAP, SIGMA_SB = 0.026, 340.0, 5.67e-8
+H_RAD_GG = 4 * SIGMA_SB * (1 / (1/0.9 + 1/0.9 - 1)) * T_GAP**3   # ~7.3 W/m2K
 
 
 # ============================================================================
@@ -144,12 +214,12 @@ stds = gap_sweep['stds']
 labels = gap_sweep['labels']
 
 bars = ax.bar(range(len(gaps)), sums, yerr=stds, capsize=5,
-              color=[COLORS['contact'], COLORS['forward'], COLORS['neutral'], COLORS['air']],
+              color=[COLORS['contact'], COLORS['forward'], COLORS['neutral'], COLORS['air'], COLORS['rad']],
               edgecolor='black', linewidth=0.5, alpha=0.85, width=0.6)
 
 # Annotate values
 for i, (s, std) in enumerate(zip(sums, stds)):
-    pct = s / 1015 * 100
+    pct = s / sums[0] * 100
     label = f'{s:.1f} mV\n({pct:.1f}%)'
     ax.annotate(label, (i, s + std + 3), ha='center', va='bottom', fontsize=9)
 
@@ -161,8 +231,10 @@ ax.set_title('Plot 1: Heat Transfer vs Gap Distance\nSiO₂–SiO₂ Stack in Ai
 ax.set_ylim(940, 1040)
 
 # Add annotation about air dominance
-ax.annotate('Only 4.8% drop over\n250× gap increase\n→ Air conduction dominates',
-            xy=(1.5, 948), fontsize=9, style='italic',
+_drop_ct = (1 - min(sums[1:]) / sums[0]) * 100
+_drop_gap = (1 - sums[-1] / sums[1]) * 100
+ax.annotate(f'Only {_drop_gap:.1f}% drop over the {gaps[-1]/gaps[1]:.0f}× gap increase\n({_drop_ct:.1f}% from contact) → sum is insensitive to the gap',
+            xy=(0.6, 946), fontsize=9, style='italic',
             bbox=dict(boxstyle='round,pad=0.3', facecolor='lightyellow', alpha=0.8))
 
 fig.tight_layout()
@@ -176,34 +248,24 @@ plt.close()
 print("Plot 2: Heat transfer mechanisms...")
 fig, ax = plt.subplots(figsize=(8, 5))
 
-gap_range = np.array([8.5, 25.4, 50, 100, 254, 508, 1000])  # µm
-k_air = 0.026  # W/mK
+gap_range = np.array([7.62, 25.4, 50, 100, 254, 508, 1000])  # µm
+k_air = K_AIR  # W/mK
 h_air = k_air / (gap_range * 1e-6)  # W/m²K
 
-# Radiation: far-field + near-field estimate
-sigma = 5.67e-8
-eps_eff = 0.82  # for SiO2-SiO2
-T_avg = 350  # K (~77°C)
-h_rad_ff = 4 * sigma * eps_eff * T_avg**3  # ~7.5 W/m²K
+# Radiation: far-field gray body, glass-glass, T = 340 K (~7.3 W/m²K).
+# The earlier ad hoc near-field factor was removed: at >= 7.62 µm the gap is far-field.
+h_rad = np.full_like(gap_range, H_RAD_GG)
 
-# Near-field enhancement (rough model for SiO2)
-# Enhancement ~ (lambda_peak / gap)^2 when gap < lambda_peak
-lambda_peak = 9e-6  # 9 µm for SiO2 phonon polariton
-nf_enhance = np.where(gap_range * 1e-6 < lambda_peak,
-                      1 + (lambda_peak / (gap_range * 1e-6))**1.5 * 0.15,
-                      1.0)
-h_rad = h_rad_ff * nf_enhance
-
-ax.semilogy(gap_range, h_air, 'o-', color=COLORS['air'], linewidth=2.5,
+ax.loglog(gap_range, h_air, 'o-', color=COLORS['air'], linewidth=2.5,
             markersize=7, label='Air conduction (h = k/d)', zorder=3)
-ax.semilogy(gap_range, h_rad, 's--', color=COLORS['rad'], linewidth=2.5,
-            markersize=7, label='Radiation (with near-field)', zorder=3)
+ax.loglog(gap_range, h_rad, 's--', color=COLORS['rad'], linewidth=2.5,
+            markersize=7, label='Radiation (glass–glass, far-field)', zorder=3)
 
 # Fill region between
 ax.fill_between(gap_range, h_rad, h_air, alpha=0.08, color='gray')
 
 # Ratio annotations at measured points
-for g in [8.5, 25.4, 254, 508]:
+for g in SWEEP_GAPS:
     h_a = k_air / (g * 1e-6)
     idx = np.argmin(np.abs(gap_range - g))
     h_r = h_rad[idx]
@@ -453,7 +515,7 @@ for i, eta in enumerate(raw_etas):
 ax1.set_xticks(range(3))
 ax1.set_xticklabels(experiments)
 ax1.set_ylabel('Raw η = A_mean / B_mean')
-ax1.set_title('Raw Rectification Ratio\n(includes TEG mismatch artifact)')
+ax1.set_title('Raw Rectification Ratio, atmospheric\n(includes TEG mismatch artifact)')
 ax1.set_ylim(0.90, 1.02)
 ax1.legend(loc='upper left', fontsize=9)
 
@@ -491,9 +553,9 @@ plt.close()
 print("Plot 6: Vtop/Vbot split...")
 fig, ax = plt.subplots(figsize=(8, 5))
 
-gaps_plot = ['8.5 µm', '25.4 µm', '254 µm']
-vtops = [622, 625, 687]
-vbots = [363, 356, 277]
+gaps_plot = [f'{g:g} µm' for g in SWEEP_GAPS]
+vtops = [round(v) for v in gap_sweep['vtop'][1:]]
+vbots = [round(v) for v in gap_sweep['vbot'][1:]]
 
 x = np.arange(len(gaps_plot))
 width = 0.45
@@ -520,12 +582,12 @@ ax.set_ylabel('TEG Voltage [mV]')
 ax.set_xlabel('Gap Distance')
 ax.set_title('Plot 6: Heat Distribution Shift with Gap Distance\nLarger gaps trap more heat on the heater side')
 ax.legend(loc='upper right')
-ax.set_ylim(0, 1050)
+ax.set_ylim(0, 1100)
 
 # Add arrow showing trend
-ax.annotate('', xy=(2.3, 750), xytext=(2.3, 350),
+ax.annotate('', xy=(3.3, 750), xytext=(3.3, 350),
            arrowprops=dict(arrowstyle='->', color='black', lw=2))
-ax.text(2.45, 550, 'More heat\ntrapped\non top', fontsize=8, va='center')
+ax.text(3.45, 550, 'More heat\ntrapped\non top', fontsize=8, va='center')
 
 fig.tight_layout()
 fig.savefig(f'{OUTPUT_DIR}/plot6_vtop_vbot_split.png')
@@ -606,60 +668,42 @@ plt.close()
 
 
 # ============================================================================
-# PLOT 8: VACUUM PREDICTION
+# PLOT 8: MEASURED TOTAL SIGNAL — AIR GAP SWEEP vs ~36 TORR (glass-glass)
+# (Replaces the earlier hand-entered "vacuum prediction" curve, which was not
+#  computed from any model and is contradicted by the measured vacuum run.
+#  Pressure-dependent predictions are in simulations/sim1_pressure.py.)
 # ============================================================================
-print("Plot 8: Vacuum prediction...")
+print("Plot 8: Air vs ~36 Torr, measured...")
 fig, ax = plt.subplots(figsize=(8, 5))
 
-gaps_pred = np.array([0, 8.5, 25.4, 50, 100, 254, 508])
+air_measured_gaps = np.array(gap_sweep['gaps_um'])
+air_measured_sums = np.array(gap_sweep['sums'])
+ax.plot(air_measured_gaps, air_measured_sums, 'o--', color=COLORS['air'], markersize=10,
+        markeredgecolor='black', zorder=4, label='Air, glass–glass (gap sweep + contact)')
 
-# Air data (measured + interpolated)
-air_measured_gaps = np.array([0, 8.5, 25.4, 254])
-air_measured_sums = np.array([1015, 986.3, 982.4, 966.6])
-# Simple interpolation
-from numpy.polynomial import polynomial as P
-coeffs = np.polyfit(air_measured_gaps, air_measured_sums, 2)
-air_interp = np.polyval(coeffs, gaps_pred)
-# Clip to reasonable values
-air_interp = np.clip(air_interp, 940, 1020)
+_p_ggv = data_path('gg_vac', required=False)
+if _p_ggv:
+    gg_vac = load_abba_data(_p_ggv)
+    # Forward (A) phases, last 20 min of each 40-min phase (as in the lab notebook)
+    vac_A = [np.mean([d['sum'] for d in gg_vac[p] if d['phase_time_ms'] >= 1200000])
+             for p in ('A1_FWD_HEAT', 'A2_FWD_HEAT')]
+    ax.plot(508, np.mean(vac_A), 's', color=COLORS['rad'], markersize=11,
+            markeredgecolor='black', zorder=5,
+            label=f'~36 Torr, glass–glass ABBA forward ({np.mean(vac_A):.0f} mV)')
 
-# Vacuum predictions
-# At contact: ~950-980 (slight drop from loss of air micro-contact)
-# Far field radiation only: h_rad ~6 W/m²K → ~730 mV
-# Near field at 8.5um: 3-5x enhancement → ~780 mV
-vacuum_pred = np.array([975, 785, 755, 745, 738, 735, 732])
-
-ax.plot(air_measured_gaps, air_measured_sums, 'o', color=COLORS['air'],
-        markersize=10, markeredgecolor='black', zorder=4, label='Air (measured)')
-ax.plot(gaps_pred, air_interp, '--', color=COLORS['air'], linewidth=1.5, alpha=0.6)
-
-ax.plot(gaps_pred, vacuum_pred, 's--', color=COLORS['rad'], markersize=8,
-        markeredgecolor='black', linewidth=2, label='Vacuum (predicted)', zorder=3)
-
-# Shade the near-field region
-ax.axvspan(0, 15, alpha=0.08, color=COLORS['rad'])
-ax.annotate('Near-field\nenhancement\nzone', xy=(7, 700), fontsize=9,
-           style='italic', ha='center', color=COLORS['rad'])
-
-# Show the gap between air and vacuum
-ax.fill_between(gaps_pred, vacuum_pred, air_interp, alpha=0.08, color='blue')
-ax.annotate('Air conduction\nfills this gap →\nmasking radiation',
-           xy=(130, 860), fontsize=9, ha='center', style='italic',
-           bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.8))
-
-# Rectification opportunity in vacuum
-ax.annotate('In vacuum: material asymmetry\nwould produce detectable\nrectification here',
-           xy=(400, 732), xytext=(350, 800),
-           arrowprops=dict(arrowstyle='->', color='black'),
-           fontsize=9, ha='center',
-           bbox=dict(boxstyle='round', facecolor='lightcoral', alpha=0.3))
+ax.annotate('At ~36 Torr gas conduction across 508 µm\nis essentially unchanged (Simulation 1);\n'
+            'the total signal does not fall. Radiation\ndominates only below ~10⁻² Torr.\n'
+            '(Heat durations differ: gap sweep ~10 min, ABBA 40 min.)',
+            xy=(0.03, 0.05), xycoords='axes fraction', fontsize=9, ha='left', va='bottom',
+            bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.9))
 
 ax.set_xlabel('Gap Distance [µm]')
-ax.set_ylabel('Predicted TEG Sum [mV]')
-ax.set_title('Plot 8: Air vs Vacuum — Why Rectification Requires Vacuum\nRadiation signal hidden by air conduction in ambient conditions')
-ax.legend(loc='center right')
-ax.set_ylim(680, 1040)
-ax.set_xlim(-10, 550)
+ax.set_ylabel('TEG Sum (Vtop + Vbot) [mV]')
+ax.set_title('Plot 8: Measured Total Signal — Air vs ~36 Torr\n'
+             'Partial vacuum did not remove gap conduction')
+ax.legend(loc='upper right', fontsize=9)
+ax.set_ylim(900, 1120)
+ax.set_xlim(-20, 540)
 
 fig.tight_layout()
 fig.savefig(f'{OUTPUT_DIR}/plot8_vacuum_prediction.png')
