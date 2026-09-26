@@ -7,12 +7,18 @@ modules in ../simulations. Nothing is hardcoded. Figures share the style in
 simulations/mgtd_plotstyle.py and are written to ../figures/paper/ as
 PNG (300 DPI), PDF and SVG.
 
+  fig_allan_deviation       Allan deviation of each air ABBA plateau (paper Figure 6)
   fig3_gap_sweep            V_bot and sum vs gap; the warm-up transient
   fig4_pressure_map         gas vs radiation across the gap vs pressure (Sim 1)
   fig5_air_null_artifact    atmospheric null on both metrics; the Seebeck artifact
   fig6_vacuum_result        vacuum phase curves; eta_corrected by metric/window;
                             the glass-glass control's rising forward phase
   fig7_gap_bound            Sim 2: what the gap itself can produce vs dT
+  table2_gap_sweep.csv      paper Table 2 values (gap sweep, per gap)
+  table3_vacuum_plateaus.csv  paper Table 3 values (vacuum plateaus, both runs + A2 rerun)
+The atmospheric eta_corrected with its Allan-based uncertainty and p-value
+(Section 3.2) comes from uncertainty_analysis.py; the 1D resistance model
+(Section 2.7) from thermal_model.py and simulations/sim1_pressure.py.
 
 Conventions used throughout:
   through-gap channel = V_bot in A phases (top heater), V_top in B phases
@@ -21,6 +27,7 @@ Conventions used throughout:
 
 Run from analysis/:  python paper_figures.py
 Override paths with MGTD_DATA_DIR / MGTD_OUT_DIR.
+
 
 """
 import os
@@ -153,6 +160,59 @@ def eta_with_ci(run, metric, t0, t1):
 def save(fig, name):
     ps.save_figure(fig, os.path.join(OUT_DIR, name + ".png"))
     print(f"  saved {name}.png/.pdf/.svg")
+
+
+# --------------------------------------------------------------------------
+# Allan deviation (paper Figure 6)
+# Same method as uncertainty_analysis.py: sum metric, last 600 s of each heat
+# phase, non-overlapping blocks, 30 log-spaced tau values up to N/3.
+# --------------------------------------------------------------------------
+def allan_deviation(x):
+    x = np.asarray(x, dtype=float); N = len(x)
+    taus = sorted(set(np.logspace(0, np.log10(N // 3), 30).astype(int)))
+    out_t, out_a = [], []
+    for tau in taus:
+        if tau < 1 or tau >= N // 2:
+            continue
+        nb = N // tau
+        blocks = x[:nb * tau].reshape(nb, tau).mean(axis=1)
+        if nb < 2:
+            continue
+        out_t.append(tau); out_a.append(np.sqrt(0.5 * np.mean(np.diff(blocks) ** 2)))
+    return np.array(out_t), np.array(out_a)
+
+
+def fig_allan_deviation():
+    runs = [("Steel–glass 508 µm (air)", load_abba(path("sg_air"))),
+            ("Glass–glass 508 µm control (air)", load_abba(path("gg_air")))]
+    styles = {"A1_FWD_HEAT": (C_A, "-", "A1"), "A2_FWD_HEAT": (C_A, "--", "A2"),
+              "B1_REV_HEAT": (C_B, "-", "B1"), "B2_REV_HEAT": (C_B, "--", "B2")}
+    fig, axes = plt.subplots(1, 2, figsize=(ps.FULL_WIDTH_IN, 2.9), sharey=True)
+    summary = {}
+    for ax, (title, run), lab in zip(axes, runs, ("(a)", "(b)")):
+        opt = []
+        for ph in PH:
+            col, ls, name = styles[ph]
+            x = (run[ph]["vtop"] + run[ph]["vbot"])[-600:]
+            t, a = allan_deviation(x)
+            k = int(np.argmin(a)); opt.append((t[k], a[k]))
+            ax.loglog(t, a, ls=ls, color=col, marker="o", ms=2.2, lw=1.0, label=name)
+            ax.plot(t[k], a[k], marker="*", ms=9, color=col, mec="black", mew=0.5, zorder=5)
+            ax.axhline(np.std(x, ddof=1) / np.sqrt(len(x)), color=col, ls=":", lw=0.6, alpha=0.7)
+        a1 = allan_deviation((run["A1_FWD_HEAT"]["vtop"] + run["A1_FWD_HEAT"]["vbot"])[-600:])[1][0]
+        tt = np.array([1, 200]); ax.loglog(tt, a1 * tt ** -0.5, color=ps.MUTED, ls="--", lw=0.7)
+        ax.text(25, a1 * 25 ** -0.5 * 0.62, "τ$^{-1/2}$ (white noise)", fontsize=6, color=ps.MUTED, rotation=-17)
+        ax.set_title(title, fontsize=7); ax.set_xlabel("Averaging time τ (s)")
+        ax.set_xlim(0.8, 300); ax.set_ylim(5e-3, 1.5); ax.grid(alpha=ps.GRID_ALPHA, which="both")
+        ps.panel_label(ax, lab)
+        summary[title] = (min(o[0] for o in opt), max(o[0] for o in opt))
+    axes[0].set_ylabel("Allan deviation of sum (mV)")
+    handles = [Line2D([], [], color=styles[p][0], ls=styles[p][1], lw=1.0, marker="o", ms=2.2, label=styles[p][2]) for p in PH]
+    handles += [Line2D([], [], marker="*", ls="", color="0.5", mec="black", ms=8, label="minimum (optimal τ)"),
+                Line2D([], [], ls=":", color="0.4", lw=0.8, label="naive σ/√N")]
+    axes[1].legend(handles=handles, loc="lower right", ncol=2, fontsize=6)
+    fig.tight_layout(); save(fig, "fig_allan_deviation")
+    return summary
 
 
 # --------------------------------------------------------------------------
@@ -394,9 +454,48 @@ def fig7_gap_bound(gap_range, sum_range):
     fig.tight_layout(); save(fig, "fig7_gap_bound")
 
 
+# --------------------------------------------------------------------------
+# Tables 2 and 3
+# --------------------------------------------------------------------------
+def paper_tables():
+    import csv
+    ct = load_abba(path("contact_air"))["A1_FWD_HEAT"]; sel = ct["t"] >= ct["t"].max() - 10
+    rows = [("0 (contact)", "—", 1, ct["vbot"][sel].mean(), 0.0, ct["vtop"][sel].mean(),
+             (ct["vtop"] + ct["vbot"])[sel].mean(), 0.0)]
+    spacer = {7.62: "0.3 mil Kapton", 25.4: "1 mil Kapton", 254.0: "10 mil Kapton", 508.0: "2×10 mil Kapton"}
+    for g in SWEEP_GAPS:
+        means, _ = load_sweep(path(f"sweep_{g:g}"))
+        vt = np.array([m[0] for m in means]); vb = np.array([m[1] for m in means]); sm = vt + vb
+        rows.append((f"{g:g}", spacer[g], len(means), vb.mean(), vb.std(ddof=1), vt.mean(), sm.mean(),
+                     100 * sm.std(ddof=1) / sm.mean()))
+    with open(os.path.join(OUT_DIR, "table2_gap_sweep.csv"), "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["gap_um", "spacer", "runs", "Vbot_mV", "Vbot_runSD_mV", "Vtop_mV", "Sum_mV", "Vbot_over_Sum_pct", "Sum_CV_pct"])
+        for r in rows:
+            w.writerow([r[0], r[1], r[2], f"{r[3]:.1f}", f"{r[4]:.2f}", f"{r[5]:.1f}", f"{r[6]:.1f}",
+                        f"{100 * r[3] / r[6]:.1f}", f"{r[7]:.2f}"])
+    sg, gg, rr = load_abba(path("sg_vac")), load_abba(path("gg_vac")), load_abba(path("sg_vac_a2"))
+    with open(os.path.join(OUT_DIR, "table3_vacuum_plateaus.csv"), "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["run", "phase", "heated", "window_min", "throughgap_mV", "throughgap_SD_mV", "sum_mV", "note"])
+        for run, name, t0, t1 in [(sg, "steel-glass TEST 16C", 30, 50), (gg, "glass-glass control TEST 16B", 20, 40)]:
+            for ph in PH:
+                m, sd = win(run, ph, t0, t1); smn = win(run, ph, t0, t1, "sum")[0]
+                note = "gauge 29.5 inHg (deeper vacuum)" if (run is sg and ph == "A2_FWD_HEAT") else ""
+                w.writerow([name, ph[:2], "steel" if (run is sg and ph[0] == "A") else "glass", f"{t0}-{t1}",
+                            f"{m:.1f}", f"{sd:.1f}", f"{smn:.1f}", note])
+        m, sd = win(rr, "A2_FWD_HEAT", 30, 50)
+        w.writerow(["steel-glass TEST 16E", "A2", "steel", "30-50", f"{m:.1f}", f"{sd:.1f}",
+                    f"{win(rr, 'A2_FWD_HEAT', 30, 50, 'sum')[0]:.1f}", "planned confirmation, inconclusive (pump cycling)"])
+    print("  saved table2_gap_sweep.csv, table3_vacuum_plateaus.csv")
+
+
 if __name__ == "__main__":
     ps.apply_style()
     os.makedirs(OUT_DIR, exist_ok=True)
+    print("Allan deviation (paper Fig 6)"); ra = fig_allan_deviation()
+    for k, v in ra.items():
+        print(f"  {k}: optimal tau {v[0]}–{v[1]} s")
     print("Figure 3"); r3 = fig3_gap_sweep()
     print(f"  V_bot drop {r3['drop_b']:.1f}%, sum drop {r3['drop_s']:.1f}%")
     print("Figure 4"); r4 = fig4_pressure_map()
@@ -409,4 +508,5 @@ if __name__ == "__main__":
     print(f"  reported-method eta {r6['reported']:.4f}; through-gap range {r6['gap_range'][0]:.3f}–{r6['gap_range'][1]:.3f}; "
           f"sum range {r6['sum_range'][0]:.3f}–{r6['sum_range'][1]:.3f}")
     print("Figure 7"); fig7_gap_bound(r6["gap_range"], r6["sum_range"])
+    print("Tables"); paper_tables()
     print(f"Done. Figures in {os.path.abspath(OUT_DIR)}")
