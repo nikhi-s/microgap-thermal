@@ -45,16 +45,20 @@ Simulation figures `sim1_pressure` and `sim2_rectification` are in `../simulatio
 
 ---
 
-## Superseded February 2026 figures
+## `archive_2026-02/` — superseded February 2026 figures
 
-Kept for the record; do not use in new materials. (Suggested: move them to `archive_2026-02/`.)
+The figures used in the February 2026 DRSEF, GENIUS and Sigma Xi materials. They are kept
+unchanged for the record, so earlier presentations can be traced, but should not be used in new
+materials. Each has a replacement produced from the raw logs.
 
 | File | What it shows | Why superseded | Replacement |
 |---|---|---|---|
-| `fig7_key_result.png` | Despite its name, the **atmospheric null** (η = 1.0006, sum metric) | Misnamed; old p-value and uncertainty | `paper/fig5_air_null_artifact` |
-| `drsef_5panel_tight.png` | Vacuum ABBA 5-panel reporting η = 0.9325 ± 0.0016 as a confirmed 6.7% rectification | The result depends on window, metric and phase choice; the A2 confirmation rerun is shown but not analysed | `paper/fig6_vacuum_result` |
-| `fig5_gap_sweep_vbot.png` | V_bot vs gap | "8.5 µm" (shim is 7.62 µm), "60×" (is 67×) | `paper/fig3_gap_sweep` |
-| `fig6_current_divider.png` | Sum and V_top/V_bot split vs gap | Same labels; "4.1%" is from contact (1.9% across the gaps) | `paper/fig3_gap_sweep`, `regenerated/plot6` |
-| `fig8_allan_deviation.png` | Allan deviation, air runs | Still valid; restyled | `paper/fig_allan_deviation` |
-| `fig9_rectification_physics.png` | Air vs radiation (419×…7×) and predicted signals | 8.5 µm; right panel uses an old linear-pressure model | `paper/fig4_pressure_map` |
-| `fig10_vacuum_prediction.png` | "Predicted" vacuum curves | Curves were hand-entered, not computed; contradicted by the measured vacuum run | `paper/fig4_pressure_map` |
+| `archive_2026-02/fig7_key_result.png` | Despite its name, the **atmospheric null** (η = 1.0006, sum metric) | Misnamed; the published uncertainty and p-value (± 0.0008, p = 0.754) do not reproduce (data give ± 0.0009, p = 0.48) | `paper/fig5_air_null_artifact` |
+| `archive_2026-02/drsef_5panel_tight.png` | Vacuum ABBA 5-panel reporting η = 0.9325 ± 0.0016 as a confirmed 6.7% rectification | The result depends on window, metric and phase choice (through-gap 0.83–0.99, sum 1.02–1.06); the A2 confirmation rerun is shown but not analysed | `paper/fig6_vacuum_result` |
+| `archive_2026-02/fig5_gap_sweep_vbot.png` | V_bot vs gap | "8.5 µm" (shim is 7.62 µm); "60×" (is 67×) | `paper/fig3_gap_sweep` |
+| `archive_2026-02/fig6_current_divider.png` | Sum and V_top/V_bot split vs gap | Same labels; "4.1%" is from contact (1.9% across the gaps) | `paper/fig3_gap_sweep`, `regenerated/plot6_vtop_vbot_split` |
+| `archive_2026-02/fig8_allan_deviation.png` | Allan deviation, atmospheric runs | Still valid; restyled to match the paper figures | `paper/fig_allan_deviation` |
+| `archive_2026-02/fig9_rectification_physics.png` | Air vs radiation ratios (419×…7×) and predicted air/vacuum signals | 8.5 µm; right panel uses an old linear-pressure model | `paper/fig4_pressure_map` |
+| `archive_2026-02/fig10_vacuum_prediction.png` | "Predicted" vacuum TEG-sum curves | Curves were hand-entered, not computed; contradicted by the measured vacuum run | `paper/fig4_pressure_map` |
+
+See `archive_2026-02/README.md` for the same list inside the folder.
