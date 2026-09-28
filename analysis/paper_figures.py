@@ -16,8 +16,10 @@ PNG (300 DPI), PDF and SVG.
   fig7_gap_bound            Sim 2: what the gap itself can produce vs dT
   table2_gap_sweep.csv      paper Table 2 values (gap sweep, per gap)
   table3_vacuum_plateaus.csv  paper Table 3 values (vacuum plateaus, both runs + A2 rerun)
-The atmospheric eta_corrected with its Allan-based uncertainty and p-value
-(Section 3.2) comes from uncertainty_analysis.py; the 1D resistance model
+The atmospheric figure reports normal-approximation two-sided p-values using
+the same propagated standard uncertainties as its 95% confidence intervals.
+These estimates use phase spread and within-window SE, not Allan deviation.
+Results are also saved to atmospheric_statistics.csv. The 1D resistance model
 (Section 2.7) from thermal_model.py and simulations/sim1_pressure.py.
 
 Conventions used throughout:
@@ -32,6 +34,8 @@ Override paths with MGTD_DATA_DIR / MGTD_OUT_DIR.
 """
 import os
 import sys
+import math
+import csv
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -160,6 +164,21 @@ def eta_with_ci(run, metric, t0, t1):
 def save(fig, name):
     ps.save_figure(fig, os.path.join(OUT_DIR, name + ".png"))
     print(f"  saved {name}.png/.pdf/.svg")
+
+
+def normal_asymmetry_test(eta_corrected, standard_uncertainty):
+    """Two-sided normal-approximation test of eta = 1.
+
+    Uses the standard uncertainty, NOT the 95% CI half-width. This tests
+    voltage asymmetry under the uncertainty assumptions, not its physical cause.
+    erfc avoids cancellation from computing 2 * (1 - normal_cdf(abs(z))).
+    """
+    if not math.isfinite(eta_corrected):
+        raise ValueError("eta_corrected must be finite")
+    if not math.isfinite(standard_uncertainty) or standard_uncertainty <= 0:
+        raise ValueError("standard_uncertainty must be finite and positive")
+    z = abs(eta_corrected - 1.0) / standard_uncertainty
+    return z, math.erfc(z / math.sqrt(2.0))
 
 
 # --------------------------------------------------------------------------
@@ -304,11 +323,22 @@ def fig4_pressure_map():
 def fig5_air_null_artifact():
     sg, gg = load_abba(path("sg_air")), load_abba(path("gg_air"))
     res = {}
+    statistics = {}
     for metric in ("sum", "gap"):
         es, ss = eta_with_ci(sg, metric, 30, 40)
         eg, sg_ = eta_with_ci(gg, metric, 30, 40)
         ec = es / eg; sc = ec * np.hypot(ss / es, sg_ / eg)
         res[metric] = (ec, 1.96 * sc)
+        z, p_value = normal_asymmetry_test(ec, sc)
+        statistics[metric] = dict(eta_corrected=ec, standard_uncertainty=sc,
+                                  ci95_low=ec - 1.96 * sc, ci95_high=ec + 1.96 * sc,
+                                  z_score=z, p_value=p_value)
+    os.makedirs(OUT_DIR, exist_ok=True)
+    with open(os.path.join(OUT_DIR, "atmospheric_statistics.csv"), "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["metric", *statistics["sum"]])
+        writer.writeheader()
+        for metric, values in statistics.items():
+            writer.writerow(dict(metric=metric, **values))
     # heater-plate temperatures: heated plate TC over the last 10 min, steel-glass vs glass-glass
     def heated_T(run):
         """Heated-plate TC (Tt in A phases, Tb in B phases), last 10 min, per phase."""
@@ -326,7 +356,7 @@ def fig5_air_null_artifact():
     for i, (k, lab) in enumerate(zip(keys, labels)):
         e, ci = res[k]
         ax.errorbar(i, e, yerr=ci, fmt="o", color=C_SUM if k == "sum" else C_GAP, ms=6, capsize=4, lw=1.2)
-        ax.text(i, e + ci + 0.0015, f"{e:.4f} ± {ci:.4f}", ha="center", fontsize=6.5, color=INK)
+        ax.text(i, e + ci + 0.0015, f"{e:.4f} ± {ci:.4f}\np = {statistics[k]['p_value']:.3g}", ha="center", fontsize=6.5, color=INK)
     ax.axhline(1.0, color=ps.MUTED, ls="--", lw=0.8)
     ax.set_xticks([0, 1]); ax.set_xticklabels(labels); ax.set_xlim(-0.6, 2.1); ax.set_ylim(0.978, 1.010)
     ax.set_ylabel("η$_{corrected}$ in air (95% CI)")
@@ -351,7 +381,7 @@ def fig5_air_null_artifact():
             bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="0.8"))
     bx.set_ylim(80, 99); bx.set_xlim(-0.6, 2.4); bx.grid(alpha=ps.GRID_ALPHA, axis="y"); ps.panel_label(bx, "(b)", right=True)
     fig.tight_layout(); save(fig, "fig5_air_null_artifact")
-    return dict(res=res, T_sg=T_sg, T_gg=T_gg, dT=dT, artifact=(art_lo, art_hi), measured=measured_gap)
+    return dict(res=res, statistics=statistics, T_sg=T_sg, T_gg=T_gg, dT=dT, artifact=(art_lo, art_hi), measured=measured_gap)
 
 
 # --------------------------------------------------------------------------
@@ -501,6 +531,9 @@ if __name__ == "__main__":
     print("Figure 4"); r4 = fig4_pressure_map()
     print(f"  steel-glass radiation share at 36 Torr: {r4['share_sg_36torr']:.1f}%")
     print("Figure 5"); r5 = fig5_air_null_artifact()
+    for metric, values in r5["statistics"].items():
+        print(f"  {metric}: z = {values['z_score']:.6g}, two-sided p = {values['p_value']:.6g} "
+              "(normal approximation; excludes systematic uncertainty)")
     print(f"  air eta_corrected: sum {r5['res']['sum'][0]:.4f} ± {r5['res']['sum'][1]:.4f}, "
           f"through-gap {r5['res']['gap'][0]:.4f} ± {r5['res']['gap'][1]:.4f}; "
           f"heater offset {r5['dT']:.1f} °C; artifact {r5['artifact'][0]:.2f}–{r5['artifact'][1]:.2f}% vs measured {r5['measured']:.2f}%")
